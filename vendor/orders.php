@@ -32,13 +32,28 @@ $method = $_SERVER['REQUEST_METHOD'];
 if ($method === 'POST' && !$orderId) {
     // Create order
     $input = json_decode(file_get_contents('php://input'), true);
-    $items = isset($input['items']) ? json_encode($input['items']) : null;
-    if (!$items) {
-        echo json_encode(['status' => 'error', 'message' => 'items required']); exit;
+    $items = [];
+    if (isset($input['items']) && is_array($input['items'])) {
+        foreach ($input['items'] as $item) {
+            // Only allow item orders (no mealbox key)
+            if (!isset($item['mealbox'])) {
+                $items[] = [
+                    'type' => 'item',
+                    'category' => $item['category'] ?? null,
+                    'subCategory' => $item['subCategory'] ?? null,
+                    'quantity' => $item['quantity'] ?? 1,
+                    'deliveryDays' => $item['deliveryDays'] ?? null
+                ];
+            }
+        }
     }
+    if (empty($items)) {
+        echo json_encode(['status' => 'error', 'message' => 'items required (no mealbox allowed)']); exit;
+    }
+    $itemsJson = json_encode($items);
     $sql = "INSERT INTO orders (vendor_id, items, status, created_at) VALUES (?, ?, 'pending', NOW())";
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param('is', $vendorId, $items);
+    $stmt->bind_param('is', $vendorId, $itemsJson);
     if ($stmt->execute()) {
         echo json_encode(['status' => 'success', 'order_id' => $conn->insert_id]);
     } else {
