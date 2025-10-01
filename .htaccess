@@ -1,0 +1,14 @@
+RewriteEngine On
+
+# Redirect all requests to index.php if file/folder does not exist
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php?route=$1 [QSA,L]
+
+# Allow direct access to uploads and static files
+RewriteCond %{REQUEST_URI} ^/backend/(user|vendor)/uploads/
+RewriteRule . - [L]
+
+# Allow direct access to existing PHP files
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^(.+\.php)$ $1 [L]
