@@ -27,9 +27,28 @@ try {
 
 $vendorId = $decoded->sub;
 $orderId = $_GET['id'] ?? null;
+$trackingId = $_GET['tracking'] ?? null; // For tracking endpoint
 $method = $_SERVER['REQUEST_METHOD'];
 
-if ($method === 'POST' && !$orderId) {
+// Tracking endpoint: /api/mealbox.order/tracking/{order_id}
+if ($method === 'GET' && $trackingId) {
+    // Get mealbox order status history
+    $sql = "SELECT status, changed_at FROM order_status_history WHERE order_id = ? ORDER BY changed_at ASC";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param('i', $trackingId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $history = [];
+    while ($row = $result->fetch_assoc()) {
+        $history[] = [
+            'status' => $row['status'],
+            'timestamp' => $row['changed_at']
+        ];
+    }
+    echo json_encode(['order_id' => $trackingId, 'history' => $history]);
+    $stmt->close();
+}
+else if ($method === 'POST' && !$orderId) {
     // Create mealbox order (only mealbox type allowed)
     $input = json_decode(file_get_contents('php://input'), true);
     $items = [];

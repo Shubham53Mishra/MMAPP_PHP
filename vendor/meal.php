@@ -1,9 +1,13 @@
 <?php
 // Vendor Meal CRUD API (POST, GET, PUT, DELETE) with image upload
-require __DIR__ . '/../../backend/composer/autoload.php';
-include '../common/db.php';
-include '../common/jwt_secret.php';
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/../error.log');
 
+include __DIR__ . '/../common/db.php';
+require __DIR__ . '/../composer/autoload.php';
+include __DIR__ . '/../common/jwt_secret.php';
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 

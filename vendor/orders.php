@@ -25,11 +25,46 @@ try {
     exit;
 }
 
+
 $vendorId = $decoded->sub;
 $orderId = $_GET['id'] ?? null;
+$trackingId = $_GET['tracking'] ?? null; // For tracking endpoint
 $method = $_SERVER['REQUEST_METHOD'];
 
-if ($method === 'POST' && !$orderId) {
+// Function to send order status update to WebSocket server
+function sendOrderUpdateToWebSocket($orderId, $status, $vendorId) {
+    $data = [
+        'type' => 'order_update',
+        'order_id' => $orderId,
+        'status' => $status,
+        'vendor_id' => $vendorId
+    ];
+    $fp = @fsockopen("127.0.0.1", 8080, $errno, $errstr, 2); // Change port if needed
+    if ($fp) {
+        fwrite($fp, json_encode($data) . "\n");
+        fclose($fp);
+    }
+}
+
+// Tracking endpoint: /api/orders/tracking/{order_id}
+if ($method === 'GET' && $trackingId) {
+    // Get order status history
+    $sql = "SELECT status, changed_at FROM order_status_history WHERE order_id = ? ORDER BY changed_at ASC";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param('i', $trackingId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $history = [];
+    while ($row = $result->fetch_assoc()) {
+        $history[] = [
+            'status' => $row['status'],
+            'timestamp' => $row['changed_at']
+        ];
+    }
+    echo json_encode(['order_id' => $trackingId, 'history' => $history]);
+    $stmt->close();
+}
+else if ($method === 'POST' && !$orderId) {
     // Create order
     $input = json_decode(file_get_contents('php://input'), true);
     $items = [];
@@ -56,6 +91,8 @@ if ($method === 'POST' && !$orderId) {
     $stmt->bind_param('is', $vendorId, $itemsJson);
     if ($stmt->execute()) {
         echo json_encode(['status' => 'success', 'order_id' => $conn->insert_id]);
+        // Send order create update (pending status)
+        sendOrderUpdateToWebSocket($conn->insert_id, 'pending', $vendorId);
     } else {
         echo json_encode(['status' => 'error', 'message' => 'Insert failed: ' . $conn->error]);
     }
@@ -98,6 +135,7 @@ if ($method === 'POST' && !$orderId) {
         $stmt->bind_param('ssii', $input['deliveryTime'], $input['deliveryDate'], $vendorId, $orderId);
         if ($stmt->execute()) {
             echo json_encode(['status' => 'success', 'message' => 'Order confirmed']);
+            sendOrderUpdateToWebSocket($orderId, 'confirmed', $vendorId);
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Update failed: ' . $conn->error]);
         }
@@ -109,6 +147,7 @@ if ($method === 'POST' && !$orderId) {
         $stmt->bind_param('sii', $input['reason'], $vendorId, $orderId);
         if ($stmt->execute()) {
             echo json_encode(['status' => 'success', 'message' => 'Order cancelled']);
+            sendOrderUpdateToWebSocket($orderId, 'cancelled', $vendorId);
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Cancel failed: ' . $conn->error]);
         }
@@ -120,6 +159,7 @@ if ($method === 'POST' && !$orderId) {
         $stmt->bind_param('sii', $input['fromDate'], $vendorId, $orderId);
         if ($stmt->execute()) {
             echo json_encode(['status' => 'success', 'message' => 'Order delivered']);
+            sendOrderUpdateToWebSocket($orderId, 'delivered', $vendorId);
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Deliver failed: ' . $conn->error]);
         }
