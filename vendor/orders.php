@@ -33,6 +33,7 @@ try {
 
 $vendorId = $decoded->sub;
 $orderId = $_GET['id'] ?? null;
+$orderNumber = $_GET['order_number'] ?? null;
 $trackingId = $_GET['tracking'] ?? null; // For tracking endpoint
 $method = $_SERVER['REQUEST_METHOD'];
 
@@ -69,7 +70,7 @@ if ($method === 'GET' && $trackingId) {
     echo json_encode(['order_id' => $trackingId, 'history' => $history]);
     $stmt->close();
 }
-else if ($method === 'POST' && !$orderId) {
+else if ($method === 'POST' && !$orderId && !$orderNumber) {
     // Create order
     $input = json_decode(file_get_contents('php://input'), true);
     $items = [];
@@ -124,7 +125,10 @@ else if ($method === 'POST' && !$orderId) {
     if ($userMobile === null) {
         $userMobile = '';
     }
-    $sql = "INSERT INTO orders (vendor_id, items, vendor_email, status, created_at, order_date, user_name, user_email, user_mobile) VALUES (?, ?, ?, 'pending', NOW(), NOW(), ?, ?, ?)";
+    // Generate order_number: MMF + rand + year + month + day + date
+    $order_number = 'MMF' . rand(1000,9999) . date('YmdHis');
+    // Add order_number to insert
+    $sql = "INSERT INTO orders (vendor_id, items, vendor_email, status, created_at, order_date, user_name, user_email, user_mobile, order_number) VALUES (?, ?, ?, 'pending', NOW(), NOW(), ?, ?, ?, ?)";
     $stmt = $conn->prepare($sql);
     $param_vendorId = (int)$bodyVendorId;
     $param_itemsJson = (string)$itemsJson;
@@ -132,14 +136,16 @@ else if ($method === 'POST' && !$orderId) {
     $param_userName = (string)$userName;
     $param_userEmail = (string)$userEmail;
     $param_userMobile = (string)$userMobile;
+    $param_orderNumber = (string)$order_number;
     $stmt->bind_param(
-        'isssss',
+        'issssss',
         $param_vendorId,
         $param_itemsJson,
         $param_vendorEmail,
         $param_userName,
         $param_userEmail,
-        $param_userMobile
+        $param_userMobile,
+        $param_orderNumber
     );
     if ($stmt->execute()) {
         $orderId = $conn->insert_id;
@@ -152,9 +158,8 @@ else if ($method === 'POST' && !$orderId) {
         $vendorInfo = $resultVendor->fetch_assoc();
         $stmtVendor->close();
 
-
-        // Fetch user info from orders table just inserted (only user_name, user_email, user_mobile)
-        $sqlOrderUser = "SELECT user_name, user_email, user_mobile FROM orders WHERE id = ?";
+        // Fetch user info and order_number from orders table just inserted
+        $sqlOrderUser = "SELECT user_name, user_email, user_mobile, order_number FROM orders WHERE id = ?";
         $stmtOrderUser = $conn->prepare($sqlOrderUser);
         $stmtOrderUser->bind_param('i', $orderId);
         $stmtOrderUser->execute();
@@ -170,6 +175,7 @@ else if ($method === 'POST' && !$orderId) {
         echo json_encode([
             'status' => 'success',
             'order_id' => $orderId,
+            'order_number' => $rowOrderUser['order_number'],
             'vendor_id' => $bodyVendorId,
             'vendor_info' => $vendorInfo,
             'user_info' => $userInfo,
@@ -180,6 +186,118 @@ else if ($method === 'POST' && !$orderId) {
         echo json_encode(['status' => 'error', 'message' => 'Insert failed: ' . $conn->error]);
     }
     $stmt->close();
+} else if ($method === 'POST' && ($orderId || $orderNumber)) {
+    // If both id and order_number are provided, verify they match
+    if ($orderId && $orderNumber) {
+        $sqlCheckMatch = "SELECT id FROM orders WHERE id = ? AND order_number = ? AND vendor_id = ?";
+        $stmtCheckMatch = $conn->prepare($sqlCheckMatch);
+        $stmtCheckMatch->bind_param('isi', $orderId, $orderNumber, $vendorId);
+        $stmtCheckMatch->execute();
+        $resultCheckMatch = $stmtCheckMatch->get_result();
+        $rowCheckMatch = $resultCheckMatch->fetch_assoc();
+        $stmtCheckMatch->close();
+        if (!$rowCheckMatch) {
+            echo json_encode(['status' => 'error', 'message' => 'Order id and order_number do not match']);
+            exit;
+        }
+    } else if ($orderNumber && !$orderId) {
+        $sqlFindId = "SELECT id FROM orders WHERE order_number = ? AND vendor_id = ?";
+        $stmtFindId = $conn->prepare($sqlFindId);
+        $stmtFindId->bind_param('si', $orderNumber, $vendorId);
+        $stmtFindId->execute();
+        $resultFindId = $stmtFindId->get_result();
+        $rowFindId = $resultFindId->fetch_assoc();
+        $stmtFindId->close();
+        if ($rowFindId) {
+            $orderId = $rowFindId['id'];
+        } else {
+            echo json_encode(['status' => 'error', 'message' => 'Order not found for order_number']);
+            exit;
+        }
+    }
+    $input = json_decode(file_get_contents('php://input'), true);
+    // ...existing code for status update...
+    // Status update (confirm/cancel/deliver) by id or order_number
+    // If order_number is provided, lookup order id
+    if ($orderNumber && !$orderId) {
+        $sqlFindId = "SELECT id FROM orders WHERE order_number = ? AND vendor_id = ?";
+        $stmtFindId = $conn->prepare($sqlFindId);
+        $stmtFindId->bind_param('si', $orderNumber, $vendorId);
+        $stmtFindId->execute();
+        $resultFindId = $stmtFindId->get_result();
+        $rowFindId = $resultFindId->fetch_assoc();
+        $stmtFindId->close();
+        if ($rowFindId) {
+            $orderId = $rowFindId['id'];
+        } else {
+            echo json_encode(['status' => 'error', 'message' => 'Order not found for order_number']);
+            exit;
+        }
+    }
+    $input = json_decode(file_get_contents('php://input'), true);
+    // Confirm order
+    if (isset($input['deliveryTime']) && isset($input['deliveryDate'])) {
+        $sql = "UPDATE orders SET status='confirmed', delivery_time=?, delivery_date=? WHERE vendor_id=? AND id=?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('ssii', $input['deliveryTime'], $input['deliveryDate'], $vendorId, $orderId);
+        $success = $stmt->execute();
+        $stmt->close();
+        sendOrderUpdateToWebSocket($orderId, 'confirmed', $vendorId);
+        echo json_encode([
+            'status' => $success ? 'success' : 'error',
+            'message' => $success ? 'Order confirmed' : 'Update failed: ' . $conn->error
+        ]);
+    // Cancel order
+    } else if (isset($input['reason'])) {
+        // Check if already cancelled
+        $sqlCheck = "SELECT status FROM orders WHERE vendor_id=? AND id=?";
+        $stmtCheck = $conn->prepare($sqlCheck);
+        $stmtCheck->bind_param('ii', $vendorId, $orderId);
+        $stmtCheck->execute();
+        $resultCheck = $stmtCheck->get_result();
+        $rowCheck = $resultCheck->fetch_assoc();
+        $stmtCheck->close();
+        if ($rowCheck && $rowCheck['status'] === 'cancelled') {
+            echo json_encode(['status' => 'error', 'message' => 'Order already cancelled']);
+            exit;
+        }
+        $sql = "UPDATE orders SET status='cancelled', cancel_reason=? WHERE vendor_id=? AND id=?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('sii', $input['reason'], $vendorId, $orderId);
+        $success = $stmt->execute();
+        $stmt->close();
+        sendOrderUpdateToWebSocket($orderId, 'cancelled', $vendorId);
+        echo json_encode([
+            'status' => $success ? 'success' : 'error',
+            'message' => $success ? 'Order cancelled' : 'Cancel failed: ' . $conn->error
+        ]);
+    // Deliver order
+    } else if (isset($input['delivered']) && $input['delivered'] == 1 && isset($input['fromDate'])) {
+        // Check if order is cancelled
+        $sqlCheck = "SELECT status FROM orders WHERE vendor_id=? AND id=?";
+        $stmtCheck = $conn->prepare($sqlCheck);
+        $stmtCheck->bind_param('ii', $vendorId, $orderId);
+        $stmtCheck->execute();
+        $resultCheck = $stmtCheck->get_result();
+        $rowCheck = $resultCheck->fetch_assoc();
+        $stmtCheck->close();
+        if ($rowCheck && $rowCheck['status'] === 'cancelled') {
+            echo json_encode(['status' => 'error', 'message' => 'Order already cancelled, cannot deliver']);
+            exit;
+        }
+        $sql = "UPDATE orders SET status='delivered', delivery_date=? WHERE vendor_id=? AND id=?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('sii', $input['fromDate'], $vendorId, $orderId);
+        $success = $stmt->execute();
+        $stmt->close();
+        sendOrderUpdateToWebSocket($orderId, 'delivered', $vendorId);
+        echo json_encode([
+            'status' => $success ? 'success' : 'error',
+            'message' => $success ? 'Order delivered' : 'Deliver failed: ' . $conn->error
+        ]);
+    } else {
+        echo json_encode(['status' => 'error', 'message' => 'Invalid update body']);
+    }
 } else if ($method === 'GET' && !$orderId) {
     // Get all orders for vendor
     $sql = 'SELECT * FROM orders WHERE vendor_id = ? ORDER BY created_at DESC';
@@ -231,29 +349,29 @@ else if ($method === 'POST' && !$orderId) {
     ]);
     $input = json_decode(file_get_contents('php://input'), true);
     // Confirm order
-        if (isset($input['deliveryTime']) && isset($input['deliveryDate'])) {
-            $sql = "UPDATE orders SET status='confirmed', delivery_time=?, delivery_date=? WHERE vendor_id=? AND id=?";
-            $stmt = $conn->prepare($sql);
-            $stmt->bind_param('ssii', $input['deliveryTime'], $input['deliveryDate'], $vendorId, $orderId);
-            if ($stmt->execute()) {
-                echo json_encode(['status' => 'success', 'message' => 'Order confirmed']);
-                sendOrderUpdateToWebSocket($orderId, 'confirmed', $vendorId);
-            } else {
-                echo json_encode(['status' => 'error', 'message' => 'Update failed: ' . $conn->error]);
-            }
-            $stmt->close();
+    if (isset($input['deliveryTime']) && isset($input['deliveryDate'])) {
+        $sql = "UPDATE orders SET status='confirmed', delivery_time=?, delivery_date=? WHERE vendor_id=? AND id=?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('ssii', $input['deliveryTime'], $input['deliveryDate'], $vendorId, $orderId);
+        $success = $stmt->execute();
+        $stmt->close();
+        sendOrderUpdateToWebSocket($orderId, 'confirmed', $vendorId);
+        echo json_encode([
+            'status' => $success ? 'success' : 'error',
+            'message' => $success ? 'Order confirmed' : 'Update failed: ' . $conn->error
+        ]);
     // Cancel order
     } else if (isset($input['reason'])) {
         $sql = "UPDATE orders SET status='cancelled', cancel_reason=? WHERE vendor_id=? AND id=?";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param('sii', $input['reason'], $vendorId, $orderId);
-        if ($stmt->execute()) {
-            echo json_encode(['status' => 'success', 'message' => 'Order cancelled']);
-            sendOrderUpdateToWebSocket($orderId, 'cancelled', $vendorId);
-        } else {
-            echo json_encode(['status' => 'error', 'message' => 'Cancel failed: ' . $conn->error]);
-        }
+        $success = $stmt->execute();
         $stmt->close();
+        sendOrderUpdateToWebSocket($orderId, 'cancelled', $vendorId);
+        echo json_encode([
+            'status' => $success ? 'success' : 'error',
+            'message' => $success ? 'Order cancelled' : 'Cancel failed: ' . $conn->error
+        ]);
     // Deliver order
     } else if (isset($input['delivered']) && $input['delivered'] == 1 && isset($input['fromDate'])) {
         // Check if order is cancelled
@@ -271,13 +389,13 @@ else if ($method === 'POST' && !$orderId) {
         $sql = "UPDATE orders SET status='delivered', delivery_date=? WHERE vendor_id=? AND id=?";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param('sii', $input['fromDate'], $vendorId, $orderId);
-        if ($stmt->execute()) {
-            echo json_encode(['status' => 'success', 'message' => 'Order delivered']);
-            sendOrderUpdateToWebSocket($orderId, 'delivered', $vendorId);
-        } else {
-            echo json_encode(['status' => 'error', 'message' => 'Deliver failed: ' . $conn->error]);
-        }
+        $success = $stmt->execute();
         $stmt->close();
+        sendOrderUpdateToWebSocket($orderId, 'delivered', $vendorId);
+        echo json_encode([
+            'status' => $success ? 'success' : 'error',
+            'message' => $success ? 'Order delivered' : 'Deliver failed: ' . $conn->error
+        ]);
     } else {
         echo json_encode(['status' => 'error', 'message' => 'Invalid update body']);
     }
