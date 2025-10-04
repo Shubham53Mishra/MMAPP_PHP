@@ -103,6 +103,124 @@ else if ($method === 'POST' && !$orderId) {
     $vendorEmail = $vendorEmailRow ? $vendorEmailRow['email'] : null;
     $stmtVendorEmail->close();
 
+    // Get user info from token
+    $userName = isset($decoded->name) ? $decoded->name : null;
+    $userEmail = isset($decoded->email) ? $decoded->email : null;
+    $userMobile = isset($decoded->mobile) ? $decoded->mobile : null;
+    // If mobile not in token, fetch from users table using user email
+    if (!$userMobile && $userEmail) {
+        $sqlUserMobile = "SELECT mobile FROM users WHERE email = ?";
+        $stmtUserMobile = $conn->prepare($sqlUserMobile);
+        $stmtUserMobile->bind_param('s', $userEmail);
+        $stmtUserMobile->execute();
+        $resultUserMobile = $stmtUserMobile->get_result();
+        if ($rowUserMobile = $resultUserMobile->fetch_assoc()) {
+            $userMobile = $rowUserMobile['mobile'];
+        }
+        $stmtUserMobile->close();
+    }
+
+    // Ensure user_mobile is not null
+    if ($userMobile === null) {
+        $userMobile = '';
+    }
+    $sql = "INSERT INTO orders (vendor_id, items, vendor_email, status, created_at, order_date, user_name, user_email, user_mobile) VALUES (?, ?, ?, 'pending', NOW(), NOW(), ?, ?, ?)";
+    $stmt = $conn->prepare($sql);
+    $param_vendorId = (int)$bodyVendorId;
+    $param_itemsJson = (string)$itemsJson;
+    $param_vendorEmail = (string)$vendorEmail;
+    $param_userName = (string)$userName;
+    $param_userEmail = (string)$userEmail;
+    $param_userMobile = (string)$userMobile;
+    $stmt->bind_param(
+        'isssss',
+        $param_vendorId,
+        $param_itemsJson,
+        $param_vendorEmail,
+        $param_userName,
+        $param_userEmail,
+        $param_userMobile
+    );
+    if ($stmt->execute()) {
+        $orderId = $conn->insert_id;
+        // Fetch vendor info using vendor_id from body (if provided)
+        $sqlVendor = "SELECT id, name, email, phone FROM vendors WHERE id = ?";
+        $stmtVendor = $conn->prepare($sqlVendor);
+        $stmtVendor->bind_param('i', $bodyVendorId);
+        $stmtVendor->execute();
+        $resultVendor = $stmtVendor->get_result();
+        $vendorInfo = $resultVendor->fetch_assoc();
+        $stmtVendor->close();
+
+
+        // Fetch user info from orders table just inserted (only user_name, user_email, user_mobile)
+        $sqlOrderUser = "SELECT user_name, user_email, user_mobile FROM orders WHERE id = ?";
+        $stmtOrderUser = $conn->prepare($sqlOrderUser);
+        $stmtOrderUser->bind_param('i', $orderId);
+        $stmtOrderUser->execute();
+        $resultOrderUser = $stmtOrderUser->get_result();
+        $rowOrderUser = $resultOrderUser->fetch_assoc();
+        $stmtOrderUser->close();
+        $userInfo = [
+            'user_name' => $rowOrderUser['user_name'],
+            'user_email' => $rowOrderUser['user_email'],
+            'user_mobile' => $rowOrderUser['user_mobile']
+        ];
+
+        echo json_encode([
+            'status' => 'success',
+            'order_id' => $orderId,
+            'vendor_id' => $bodyVendorId,
+            'vendor_info' => $vendorInfo,
+            'user_info' => $userInfo,
+            'token_vendor_id' => $vendorId
+        ]);
+        sendOrderUpdateToWebSocket($orderId, 'pending', $bodyVendorId);
+    } else {
+        echo json_encode(['status' => 'error', 'message' => 'Insert failed: ' . $conn->error]);
+    }
+    $stmt->close();
+} else if ($method === 'GET' && !$orderId) {
+    // Get all orders for vendor
+    // Optional category/subCategory filter from query params
+    $category = $_GET['category'] ?? null;
+    $subCategory = $_GET['subCategory'] ?? null;
+    $sql = 'SELECT * FROM orders WHERE vendor_id = ? ORDER BY created_at DESC';
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param('i', $vendorId);
+    $stmt->execute();
+    // Create order
+    $input = json_decode(file_get_contents('php://input'), true);
+    $items = [];
+    // Allow vendor_id in body, fallback to token
+    $bodyVendorId = isset($input['vendor_id']) ? intval($input['vendor_id']) : $vendorId;
+    if (isset($input['items']) && is_array($input['items'])) {
+        foreach ($input['items'] as $item) {
+            $items[] = [
+                'type' => 'item',
+                'id' => isset($item['id']) ? intval($item['id']) : null,
+                'category' => $item['category'] ?? null,
+                'subCategory' => $item['subCategory'] ?? null,
+                'quantity' => $item['quantity'] ?? 1,
+                'deliveryDays' => $item['deliveryDays'] ?? null,
+                'vendor_id' => $bodyVendorId
+            ];
+        }
+    }
+    if (empty($items)) {
+        echo json_encode(['status' => 'error', 'message' => 'items required']); exit;
+    }
+    $itemsJson = json_encode($items);
+    // Fetch vendor email using vendor_id
+    $sqlVendorEmail = "SELECT email FROM vendors WHERE id = ?";
+    $stmtVendorEmail = $conn->prepare($sqlVendorEmail);
+    $stmtVendorEmail->bind_param('i', $bodyVendorId);
+    $stmtVendorEmail->execute();
+    $resultVendorEmail = $stmtVendorEmail->get_result();
+    $vendorEmailRow = $resultVendorEmail->fetch_assoc();
+    $vendorEmail = $vendorEmailRow ? $vendorEmailRow['email'] : null;
+    $stmtVendorEmail->close();
+
     $sql = "INSERT INTO orders (vendor_id, items, vendor_email, status, created_at, order_date) VALUES (?, ?, ?, 'pending', NOW(), NOW())";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param('iss', $bodyVendorId, $itemsJson, $vendorEmail);
@@ -143,104 +261,6 @@ else if ($method === 'POST' && !$orderId) {
         echo json_encode(['status' => 'error', 'message' => 'Insert failed: ' . $conn->error]);
     }
     $stmt->close();
-} else if ($method === 'GET' && !$orderId) {
-    // Get all orders for vendor
-    // Optional category/subCategory filter from query params
-    $category = $_GET['category'] ?? null;
-    $subCategory = $_GET['subCategory'] ?? null;
-    $sql = 'SELECT * FROM orders WHERE vendor_id = ? ORDER BY created_at DESC';
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param('i', $vendorId);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $rows = [];
-    while ($row = $result->fetch_assoc()) {
-        $row['items'] = $row['items'] ? json_decode($row['items'], true) : [];
-        // Enrich each item with category/subCategory info from items table if item id exists
-        foreach ($row['items'] as &$item) {
-            if (isset($item['id'])) {
-                    // Only enrich if columns exist in items table
-                    $sqlItem = "SHOW COLUMNS FROM items LIKE 'category'";
-                    $resultCol = $conn->query($sqlItem);
-                    if ($resultCol && $resultCol->num_rows > 0) {
-                        $sqlItem = "SELECT category, subCategory FROM items WHERE id = ?";
-                        $stmtItem = $conn->prepare($sqlItem);
-                        $stmtItem->bind_param('i', $item['id']);
-                        $stmtItem->execute();
-                        $resultItem = $stmtItem->get_result();
-                        if ($itemRow = $resultItem->fetch_assoc()) {
-                            $item['category_id'] = $itemRow['category'];
-                            $item['subCategory_id'] = $itemRow['subCategory'];
-                            // Remove old fields if present
-                            if (isset($item['category'])) unset($item['category']);
-                            if (isset($item['subCategory'])) unset($item['subCategory']);
-                            // Fetch category info
-                            $item['category_info'] = null;
-                            $item['subCategory_info'] = null;
-                            if (!empty($itemRow['category'])) {
-                                $sqlCat = "SELECT * FROM category WHERE id = ?";
-                                $stmtCat = $conn->prepare($sqlCat);
-                                $stmtCat->bind_param('i', $itemRow['category']);
-                                $stmtCat->execute();
-                                $resultCat = $stmtCat->get_result();
-                                if ($catRow = $resultCat->fetch_assoc()) {
-                                    $item['category_info'] = $catRow;
-                                }
-                                $stmtCat->close();
-                            }
-                            if (!empty($itemRow['subCategory'])) {
-                                $sqlSubCat = "SELECT * FROM subcategory WHERE id = ?";
-                                $stmtSubCat = $conn->prepare($sqlSubCat);
-                                $stmtSubCat->bind_param('i', $itemRow['subCategory']);
-                                $stmtSubCat->execute();
-                                $resultSubCat = $stmtSubCat->get_result();
-                                if ($subCatRow = $resultSubCat->fetch_assoc()) {
-                                    $item['subCategory_info'] = $subCatRow;
-                                }
-                                $stmtSubCat->close();
-                            }
-                        }
-                        $stmtItem->close();
-                    }
-            }
-        }
-        unset($item); // break reference
-        // Only show orders where at least one item matches vendor token and category/subCategory
-        $found = false;
-        foreach ($row['items'] as $item) {
-            if (
-                (isset($item['vendor_id']) && $item['vendor_id'] == $vendorId) &&
-                ($category === null || (isset($item['category']) && $item['category'] == $category)) &&
-                ($subCategory === null || (isset($item['subCategory']) && $item['subCategory'] == $subCategory))
-            ) {
-                $found = true;
-                break;
-            }
-        }
-        if (!$found) continue;
-            // Always include vendor_id and vendor_email in each order
-            $row['vendor_id'] = $row['vendor_id'];
-            $row['vendor_email'] = $row['vendor_email'];
-        $rows[] = $row;
-    }
-    echo json_encode(['status' => 'success', 'orders' => $rows]);
-    $stmt->close();
-} else if ($method === 'GET' && $orderId) {
-    // Get single order
-    $sql = 'SELECT * FROM orders WHERE vendor_id = ? AND id = ?';
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param('ii', $vendorId, $orderId);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $row = $result->fetch_assoc();
-    if ($row) {
-        $row['items'] = $row['items'] ? json_decode($row['items'], true) : [];
-        echo json_encode(['status' => 'success', 'order' => $row]);
-    } else {
-        echo json_encode(['status' => 'error', 'message' => 'Order not found']);
-    }
-    $stmt->close();
-} else if ($method === 'PUT' && $orderId) {
     $input = json_decode(file_get_contents('php://input'), true);
     // Confirm order
         if (isset($input['deliveryTime']) && isset($input['deliveryDate'])) {
