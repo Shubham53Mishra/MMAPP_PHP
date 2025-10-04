@@ -189,6 +189,39 @@ else if ($method === 'POST' && !$orderId) {
     $result = $stmt->get_result();
     $orders = [];
     while ($row = $result->fetch_assoc()) {
+        // Decode items JSON string to array
+        if (isset($row['items'])) {
+            $itemsArr = json_decode($row['items'], true);
+            // Enrich each item with category_info and subCategory_info
+            foreach ($itemsArr as &$item) {
+                // Category info
+                $catInfo = null;
+                if (!empty($item['category'])) {
+                    $sqlCat = "SELECT id, name FROM categories WHERE id = ?";
+                    $stmtCat = $conn->prepare($sqlCat);
+                    $stmtCat->bind_param('i', $item['category']);
+                    $stmtCat->execute();
+                    $resultCat = $stmtCat->get_result();
+                    $catInfo = $resultCat->fetch_assoc();
+                    $stmtCat->close();
+                }
+                $item['category_info'] = $catInfo;
+                // SubCategory info
+                $subCatInfo = null;
+                if (!empty($item['subCategory'])) {
+                    $sqlSubCat = "SELECT id, name FROM vendor_subcategories WHERE id = ?";
+                    $stmtSubCat = $conn->prepare($sqlSubCat);
+                    $stmtSubCat->bind_param('i', $item['subCategory']);
+                    $stmtSubCat->execute();
+                    $resultSubCat = $stmtSubCat->get_result();
+                    $subCatInfo = $resultSubCat->fetch_assoc();
+                    $stmtSubCat->close();
+                }
+                $item['subCategory_info'] = $subCatInfo;
+            }
+            unset($item);
+            $row['items'] = $itemsArr;
+        }
         $orders[] = $row;
     }
     $stmt->close();
