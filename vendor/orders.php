@@ -182,85 +182,20 @@ else if ($method === 'POST' && !$orderId) {
     $stmt->close();
 } else if ($method === 'GET' && !$orderId) {
     // Get all orders for vendor
-    // Optional category/subCategory filter from query params
-    $category = $_GET['category'] ?? null;
-    $subCategory = $_GET['subCategory'] ?? null;
     $sql = 'SELECT * FROM orders WHERE vendor_id = ? ORDER BY created_at DESC';
     $stmt = $conn->prepare($sql);
     $stmt->bind_param('i', $vendorId);
     $stmt->execute();
-    // Create order
-    $input = json_decode(file_get_contents('php://input'), true);
-    $items = [];
-    // Allow vendor_id in body, fallback to token
-    $bodyVendorId = isset($input['vendor_id']) ? intval($input['vendor_id']) : $vendorId;
-    if (isset($input['items']) && is_array($input['items'])) {
-        foreach ($input['items'] as $item) {
-            $items[] = [
-                'type' => 'item',
-                'id' => isset($item['id']) ? intval($item['id']) : null,
-                'category' => $item['category'] ?? null,
-                'subCategory' => $item['subCategory'] ?? null,
-                'quantity' => $item['quantity'] ?? 1,
-                'deliveryDays' => $item['deliveryDays'] ?? null,
-                'vendor_id' => $bodyVendorId
-            ];
-        }
-    }
-    if (empty($items)) {
-        echo json_encode(['status' => 'error', 'message' => 'items required']); exit;
-    }
-    $itemsJson = json_encode($items);
-    // Fetch vendor email using vendor_id
-    $sqlVendorEmail = "SELECT email FROM vendors WHERE id = ?";
-    $stmtVendorEmail = $conn->prepare($sqlVendorEmail);
-    $stmtVendorEmail->bind_param('i', $bodyVendorId);
-    $stmtVendorEmail->execute();
-    $resultVendorEmail = $stmtVendorEmail->get_result();
-    $vendorEmailRow = $resultVendorEmail->fetch_assoc();
-    $vendorEmail = $vendorEmailRow ? $vendorEmailRow['email'] : null;
-    $stmtVendorEmail->close();
-
-    $sql = "INSERT INTO orders (vendor_id, items, vendor_email, status, created_at, order_date) VALUES (?, ?, ?, 'pending', NOW(), NOW())";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param('iss', $bodyVendorId, $itemsJson, $vendorEmail);
-    if ($stmt->execute()) {
-        $orderId = $conn->insert_id;
-        // Fetch vendor info using vendor_id from body (if provided)
-        $sqlVendor = "SELECT id, name, email, phone FROM vendors WHERE id = ?";
-        $stmtVendor = $conn->prepare($sqlVendor);
-        $stmtVendor->bind_param('i', $bodyVendorId);
-        $stmtVendor->execute();
-        $resultVendor = $stmtVendor->get_result();
-        $vendorInfo = $resultVendor->fetch_assoc();
-        $stmtVendor->close();
-
-        // Fetch user info using user_id from token only
-        $userId = isset($decoded->user_id) ? $decoded->user_id : null;
-        $userInfo = null;
-        if ($userId) {
-            $sqlUser = "SELECT id, name, email, phone FROM users WHERE id = ?";
-            $stmtUser = $conn->prepare($sqlUser);
-            $stmtUser->bind_param('i', $userId);
-            $stmtUser->execute();
-            $resultUser = $stmtUser->get_result();
-            $userInfo = $resultUser->fetch_assoc();
-            $stmtUser->close();
-        }
-
-        echo json_encode([
-            'status' => 'success',
-            'order_id' => $orderId,
-            'vendor_id' => $bodyVendorId,
-            'vendor_info' => $vendorInfo,
-            'user_info' => $userInfo,
-            'token_vendor_id' => $vendorId
-        ]);
-        sendOrderUpdateToWebSocket($orderId, 'pending', $bodyVendorId);
-    } else {
-        echo json_encode(['status' => 'error', 'message' => 'Insert failed: ' . $conn->error]);
+    $result = $stmt->get_result();
+    $orders = [];
+    while ($row = $result->fetch_assoc()) {
+        $orders[] = $row;
     }
     $stmt->close();
+    echo json_encode([
+        'status' => 'success',
+        'orders' => $orders
+    ]);
     $input = json_decode(file_get_contents('php://input'), true);
     // Confirm order
         if (isset($input['deliveryTime']) && isset($input['deliveryDate'])) {
