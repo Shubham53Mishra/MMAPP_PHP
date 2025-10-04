@@ -142,24 +142,38 @@ if ($method === 'POST') {
     }
     echo json_encode(['status' => 'success', 'items' => $rows]);
     $stmt->close();
-} else if ($method === 'PUT') {
-    // Update vendor item (with image update via form-data)
-    // Accept id from input or URL (?id=...)
+} else if (
+    ($method === 'POST' && isset($_POST['_method']) && $_POST['_method'] === 'PUT')
+    || $method === 'PUT'
+) {
+    // Update vendor item (image upload supported via POST + form-data)
+
     $id = null;
-    // Accept id from URL or input
-    if (isset($_GET['id']) && !is_array($_GET['id'])) {
-        $id = $_GET['id'];
+
+    if ($method === 'PUT') {
+        // Parse urlencoded data for PUT (no file support here)
+        parse_str(file_get_contents('php://input'), $data);
+        if (isset($_GET['id']) && !is_array($_GET['id'])) {
+            $id = $_GET['id'];
+        } elseif (isset($data['id'])) {
+            $id = $data['id'];
+        }
+    } else {
+        // POST + _method=PUT (with files support)
+        $id = $_POST['id'] ?? null;
+        $data = $_POST;
     }
-    // Parse input for fields (application/x-www-form-urlencoded)
-    parse_str(file_get_contents('php://input'), $data);
-    if (!$id && isset($data['id']) && !is_array($data['id'])) {
-        $id = $data['id'];
+
+    if (!$id) {
+        echo json_encode(['status' => 'error', 'message' => 'id required']);
+        exit;
     }
-    if (!$id) { echo json_encode(['status' => 'error', 'message' => 'id required']); exit; }
-    $fields = ['name','description','cost'];
+
+    $fields = ['name', 'description', 'cost'];
     $set = [];
     $params = [];
     $types = '';
+
     foreach ($fields as $f) {
         if (isset($data[$f])) {
             $set[] = "$f = ?";
@@ -167,35 +181,50 @@ if ($method === 'POST') {
             $types .= ($f === 'cost') ? 'd' : 's';
         }
     }
-    if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+
+    // ✅ Only works if POST + _method=PUT (because $_FILES available)
+    if ($method === 'POST' && isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
         $uploadDir = __DIR__ . '/uploads/vendor_' . $vendorId . '/item/';
-        if (!is_dir($uploadDir)) { mkdir($uploadDir, 0777, true); }
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0777, true);
+        }
         $ext = pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
         $filename = 'item_' . $vendorId . '_' . time() . '.' . $ext;
         $targetPath = $uploadDir . $filename;
+
         if (move_uploaded_file($_FILES['image']['tmp_name'], $targetPath)) {
             $imagePath = 'uploads/vendor_' . $vendorId . '/item/' . $filename;
             $set[] = "image = ?";
             $params[] = $imagePath;
             $types .= 's';
         } else {
-            echo json_encode(['status' => 'error', 'message' => 'Image upload failed']); exit;
+            echo json_encode(['status' => 'error', 'message' => 'Image upload failed']);
+            exit;
         }
     }
-    if (empty($set)) { echo json_encode(['status' => 'error', 'message' => 'No fields to update']); exit; }
+
+    if (empty($set)) {
+        echo json_encode(['status' => 'error', 'message' => 'No fields to update']);
+        exit;
+    }
+
     $params[] = $vendorId;
     $params[] = $id;
     $types .= 'ii';
+
     $sql = 'UPDATE items SET ' . implode(',', $set) . ' WHERE vendor_id = ? AND id = ?';
     $stmt = $conn->prepare($sql);
     $stmt->bind_param($types, ...$params);
+
     if ($stmt->execute()) {
         echo json_encode(['status' => 'success', 'message' => 'Item updated']);
     } else {
         echo json_encode(['status' => 'error', 'message' => 'Update failed: ' . $conn->error]);
     }
+
     $stmt->close();
-} else if ($method === 'DELETE') {
+}
+else if ($method === 'DELETE') {
     // Delete vendor item
     $id = null;
     // Accept id from URL or input
