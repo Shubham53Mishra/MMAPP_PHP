@@ -156,9 +156,15 @@ if ($method === 'GET' && $trackingId) {
     $stmt->close();
 
 } else if ($method === 'GET' && !$orderId) {
-    $sql = 'SELECT * FROM meal_box_orders WHERE vendor_id = ? ORDER BY created_at DESC';
+    // Show only orders for the logged-in user (by user_email from token)
+    $userEmail = isset($decoded->email) ? $decoded->email : null;
+    if (!$userEmail) {
+        echo json_encode(['status' => 'error', 'message' => 'User email not found in token']);
+        exit;
+    }
+    $sql = 'SELECT * FROM meal_box_orders WHERE user_email = ? ORDER BY created_at DESC';
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param('i', $vendorId);
+    $stmt->bind_param('s', $userEmail);
     $stmt->execute();
     $result = $stmt->get_result();
     $rows = [];
@@ -186,7 +192,7 @@ if ($method === 'GET' && $trackingId) {
             $rows[] = $row;
         }
     }
-    echo json_encode(['status' => 'success', 'orders' => $rows]);
+    echo json_encode(['status' => 'success', 'orders' => $rows, 'user_token' => $jwt]);
     $stmt->close();
 
 } else if ($method === 'GET' && $orderId) {
