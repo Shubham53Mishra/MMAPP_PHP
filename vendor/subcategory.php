@@ -21,7 +21,7 @@ $isAuthenticated = false;
 
 // Try decoding JWT (optional for GET)
 $headers = getallheaders();
-$authHeader = $headers['Authorization'] ?? '';
+$authHeader = $headers['Authorization'] ?? $headers['authorization'] ?? '';
 
 if ($authHeader && preg_match('/Bearer\s(.*)/', $authHeader, $matches)) {
     $jwt = $matches[1];
@@ -158,9 +158,10 @@ else if ($method === 'GET') {
         $subcategories = [];
 
         while ($row = $resultSub->fetch_assoc()) {
-            // Add full image URL
+            // Add full image URL if image path present
             if (!empty($row['imageUrl'])) {
-                $baseUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://" . $_SERVER['HTTP_HOST'];
+                $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+                $baseUrl = $scheme . '://' . $_SERVER['HTTP_HOST'] . rtrim(dirname($_SERVER['PHP_SELF']), '/\\');
                 $row['image_url'] = rtrim($baseUrl, '/') . '/' . ltrim($row['imageUrl'], '/');
             } else {
                 $row['image_url'] = null;
@@ -207,9 +208,9 @@ else if ($method === 'PUT') {
         $data['pricePerUnit'] = $original - ($original * $discount / 100);
     }
 
-    // Handle NEW image upload ONLY if a file is provided
+    // Handle NEW image upload ONLY if a file is provided (use same uploads folder as POST)
     if (isset($_FILES['imageUrl']) && $_FILES['imageUrl']['error'] === UPLOAD_ERR_OK) {
-        $uploadDir = __DIR__ . '/uploads/';
+        $uploadDir = __DIR__ . '/uploads/subcategory_images/';
         if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
 
         $ext = pathinfo($_FILES['imageUrl']['name'], PATHINFO_EXTENSION);
@@ -217,7 +218,7 @@ else if ($method === 'PUT') {
         $targetPath = $uploadDir . $filename;
 
         if (move_uploaded_file($_FILES['imageUrl']['tmp_name'], $targetPath)) {
-            $data['imageUrl'] = 'uploads/' . $filename;
+            $data['imageUrl'] = 'uploads/subcategory_images/' . $filename;
             
             // Add imageUrl to fields to update
             if (!in_array('imageUrl', $fields)) {
