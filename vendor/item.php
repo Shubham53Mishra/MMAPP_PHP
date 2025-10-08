@@ -15,32 +15,43 @@ header('Content-Type: application/json');
 
 $method = $_SERVER['REQUEST_METHOD'];
 
-// GET method - no authentication required, but filters by vendor if token provided
+// GET method - no authentication required, but if an Authorization header is present
+// require a valid vendor token and return only that vendor's items. If no
+// Authorization header is present, return all items (public view).
 if ($method === 'GET') {
     $headers = getallheaders();
-    $authHeader = $headers['Authorization'] ?? '';
+    $authHeader = $headers['Authorization'] ?? $headers['authorization'] ?? '';
     $vendorId = null;
 
-    // Check if vendor token is provided
-    if ($authHeader && preg_match('/Bearer\s(.*)/', $authHeader, $matches)) {
-        $jwt = $matches[1];
-        try {
-            $decoded = JWT::decode($jwt, new Key(JWT_SECRET, 'HS256'));
-            $vendorId = $decoded->sub;
-        } catch (Exception $e) {
-            // Invalid token - ignore and show all items
-            $vendorId = null;
+    // If an Authorization header was provided, require a valid Bearer token.
+    if ($authHeader) {
+        if (preg_match('/Bearer\s(.*)/i', $authHeader, $matches)) {
+            $jwt = $matches[1];
+            try {
+                $decoded = JWT::decode($jwt, new Key(JWT_SECRET, 'HS256'));
+                $vendorId = $decoded->sub;
+            } catch (Exception $e) {
+                // Token present but invalid - return an error (do not silently fall back)
+                echo json_encode(['status' => 'error', 'message' => 'Invalid vendor token']);
+                $conn->close();
+                exit;
+            }
+        } else {
+            // Authorization header present but not a Bearer token
+            echo json_encode(['status' => 'error', 'message' => 'Invalid Authorization header']);
+            $conn->close();
+            exit;
         }
     }
 
-    // Build SQL query based on vendor authentication
+    // Build SQL query based on vendor authentication (if $vendorId is set)
     if ($vendorId) {
         // Vendor is authenticated - show only their items
         $sql = 'SELECT * FROM items WHERE vendor_id = ?';
         $stmt = $conn->prepare($sql);
         $stmt->bind_param('i', $vendorId);
     } else {
-        // No vendor token - show all items
+        // No Authorization header - show all items
         $sql = 'SELECT * FROM items';
         $stmt = $conn->prepare($sql);
     }
@@ -50,8 +61,8 @@ if ($method === 'GET') {
     $rows = [];
 
     // Base URL for images
-    $baseUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") .
-               "://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']);
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $baseUrl = $scheme . '://' . $_SERVER['HTTP_HOST'] . rtrim(dirname($_SERVER['PHP_SELF']), '/\\');
 
     while ($row = $result->fetch_assoc()) {
         // Add full image URL if exists
