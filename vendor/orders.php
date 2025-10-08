@@ -108,6 +108,8 @@ else if ($method === 'POST' && !$orderId && !$orderNumber) {
     $userName = isset($decoded->name) ? $decoded->name : null;
     $userEmail = isset($decoded->email) ? $decoded->email : null;
     $userMobile = isset($decoded->mobile) ? $decoded->mobile : null;
+    // Debug log for userEmail
+    error_log('Order Create Debug: userEmail = ' . var_export($userEmail, true));
     // If mobile not in token, fetch from users table using user email
     if (!$userMobile && $userEmail) {
         $sqlUserMobile = "SELECT mobile FROM users WHERE email = ?";
