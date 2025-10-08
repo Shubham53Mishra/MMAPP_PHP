@@ -1,141 +1,299 @@
 <?php
 // Vendor subcategory CRUD API (POST, GET, PUT, DELETE) with image upload
-require __DIR__ . '/../../backend/composer/autoload.php';
-include '../common/db.php';
-include '../common/jwt_secret.php';
+
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/../error.log');
+
+include __DIR__ . '/../common/db.php';
+require __DIR__ . '/../composer/autoload.php';
+include __DIR__ . '/../common/jwt_secret.php';
 
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 
 header('Content-Type: application/json');
 
+// Default: no vendor ID (public mode)
+$vendorId = null;
+$isAuthenticated = false;
+
+// Try decoding JWT (optional for GET)
 $headers = getallheaders();
 $authHeader = $headers['Authorization'] ?? '';
 
-if (!$authHeader || !preg_match('/Bearer\s(.*)/', $authHeader, $matches)) {
-    echo json_encode(['status' => 'error', 'message' => 'Authorization token required']);
-    exit;
+if ($authHeader && preg_match('/Bearer\s(.*)/', $authHeader, $matches)) {
+    $jwt = $matches[1];
+    try {
+        $decoded = JWT::decode($jwt, new Key(JWT_SECRET, 'HS256'));
+        $vendorId = $decoded->sub;
+        $isAuthenticated = true;
+    } catch (Exception $e) {
+        $isAuthenticated = false;
+    }
 }
-$jwt = $matches[1];
-
-try {
-    $decoded = JWT::decode($jwt, new Key(JWT_SECRET, 'HS256'));
-} catch (Exception $e) {
-    echo json_encode(['status' => 'error', 'message' => 'Invalid token']);
-    exit;
-}
-
-$vendorId = $decoded->sub;
-
 
 $method = $_SERVER['REQUEST_METHOD'];
+
+// Check for _method override in POST data
+if ($method === 'POST' && isset($_POST['_method'])) {
+    $method = strtoupper($_POST['_method']);
+}
+
+// ---------- POST ----------
 if ($method === 'POST') {
+    if (!$isAuthenticated) {
+        echo json_encode(['status' => 'error', 'message' => 'Authorization token required']);
+        exit;
+    }
+
     // Add subcategory (with image upload)
     $data = $_POST;
-    $fields = ['categoryId','name','description','pricePerUnit','quantity','priceType','deliveryPriceEnabled','minDeliveryDays','maxDeliveryDays','deliveryPrice'];
+    $fields = ['category_id', 'name', 'description', 'pricePerUnit', 'quantity', 'priceType', 'deliveryPriceEnabled', 'minDeliveryDays', 'maxDeliveryDays'];
+
     foreach ($fields as $f) {
-        if (!isset($data[$f]) && $f !== 'deliveryPrice') {
-            echo json_encode(['status' => 'error', 'message' => "$f required"]); exit;
+        if (!isset($data[$f])) {
+            echo json_encode(['status' => 'error', 'message' => "$f required"]);
+            exit;
         }
     }
+
+    // Convert available to integer
+    $data['available'] = (isset($data['available']) && in_array($data['available'], [1, '1', true, 'true'])) ? 1 : 1;
+
+    // Handle image upload
     $imageUrl = null;
     if (isset($_FILES['imageUrl']) && $_FILES['imageUrl']['error'] === UPLOAD_ERR_OK) {
         $uploadDir = __DIR__ . '/uploads/';
-        if (!is_dir($uploadDir)) { mkdir($uploadDir, 0777, true); }
+        if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
+
         $ext = pathinfo($_FILES['imageUrl']['name'], PATHINFO_EXTENSION);
         $filename = 'subcategory_' . $vendorId . '_' . time() . '.' . $ext;
         $targetPath = $uploadDir . $filename;
+
         if (move_uploaded_file($_FILES['imageUrl']['tmp_name'], $targetPath)) {
             $imageUrl = 'uploads/' . $filename;
         } else {
-            echo json_encode(['status' => 'error', 'message' => 'Image upload failed']); exit;
+            echo json_encode(['status' => 'error', 'message' => 'Image upload failed']);
+            exit;
         }
     }
-    $sql = "INSERT INTO vendor_subcategories (vendor_id, category_id, name, description, pricePerUnit, imageUrl, quantity, priceType, deliveryPriceEnabled, minDeliveryDays, maxDeliveryDays, deliveryPrice) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+
+    // Price and discount
+    $originalPricePerUnit = $data['pricePerUnit'];
+    $discount = isset($data['discount']) ? floatval($data['discount']) : 0;
+    $discountedPrice = $originalPricePerUnit - ($originalPricePerUnit * $discount / 100);
+
+    $discountStart = $data['discountStart'] ?? null;
+    $discountEnd = $data['discountEnd'] ?? null;
+
+    $sql = "INSERT INTO vendor_subcategories 
+        (vendor_id, category_id, name, description, pricePerUnit, originalPricePerUnit, imageUrl, quantity, priceType, deliveryPriceEnabled, minDeliveryDays, maxDeliveryDays, deliveryPrice, discount, discountStart, discountEnd, available)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param('iissssssiiid',
+    $stmt->bind_param(
+        'iissddsissiiidssi',
         $vendorId,
-        $data['categoryId'],
+        $data['category_id'],
         $data['name'],
         $data['description'],
-        $data['pricePerUnit'],
+        $discountedPrice,
+        $originalPricePerUnit,
         $imageUrl,
         $data['quantity'],
         $data['priceType'],
         $data['deliveryPriceEnabled'],
         $data['minDeliveryDays'],
         $data['maxDeliveryDays'],
-        $data['deliveryPrice']
+        $data['deliveryPrice'],
+        $discount,
+        $discountStart,
+        $discountEnd,
+        $data['available']
     );
+
     if ($stmt->execute()) {
         echo json_encode(['status' => 'success', 'message' => 'Subcategory added', 'id' => $conn->insert_id]);
     } else {
         echo json_encode(['status' => 'error', 'message' => 'Insert failed: ' . $conn->error]);
     }
     $stmt->close();
-} else if ($method === 'GET') {
-    // Get all subcategories for this vendor
-    $sql = 'SELECT * FROM vendor_subcategories WHERE vendor_id = ?';
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param('i', $vendorId);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $rows = [];
-    while ($row = $result->fetch_assoc()) {
-        // Add full image URL if imageUrl exists
-        if (!empty($row['imageUrl'])) {
-            $baseUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']);
-            $row['image_url'] = rtrim($baseUrl, '/') . '/' . ltrim($row['imageUrl'], '/');
-        } else {
-            $row['image_url'] = null;
-        }
-        $rows[] = $row;
+}
+
+// ---------- GET ----------
+else if ($method === 'GET') {
+    if ($isAuthenticated && $vendorId) {
+        // Show only vendor's categories + subcategories
+        $sqlCat = 'SELECT DISTINCT c.id, c.name 
+                   FROM categories c 
+                   INNER JOIN vendor_subcategories vs ON c.id = vs.category_id 
+                   WHERE vs.vendor_id = ?';
+        $stmtCat = $conn->prepare($sqlCat);
+        $stmtCat->bind_param('i', $vendorId);
+        $stmtCat->execute();
+        $resultCat = $stmtCat->get_result();
+    } else {
+        // Public mode — show all vendors
+        $sqlCat = 'SELECT DISTINCT c.id, c.name 
+                   FROM categories c 
+                   INNER JOIN vendor_subcategories vs ON c.id = vs.category_id';
+        $stmtCat = $conn->prepare($sqlCat);
+        $stmtCat->execute();
+        $resultCat = $stmtCat->get_result();
     }
-    echo json_encode(['status' => 'success', 'subcategories' => $rows]);
-    $stmt->close();
-} else if ($method === 'PUT') {
-    // Update subcategory (no image update via PUT)
-    parse_str(file_get_contents('php://input'), $data);
-    if (!isset($data['id'])) { echo json_encode(['status' => 'error', 'message' => 'id required']); exit; }
-    $fields = ['categoryId','name','description','pricePerUnit','quantity','priceType','deliveryPriceEnabled','minDeliveryDays','maxDeliveryDays','deliveryPrice'];
+
+    $categories = [];
+    while ($cat = $resultCat->fetch_assoc()) {
+        if ($isAuthenticated && $vendorId) {
+            $sqlSub = 'SELECT * FROM vendor_subcategories WHERE vendor_id = ? AND category_id = ?';
+            $stmtSub = $conn->prepare($sqlSub);
+            $stmtSub->bind_param('ii', $vendorId, $cat['id']);
+        } else {
+            $sqlSub = 'SELECT * FROM vendor_subcategories WHERE category_id = ?';
+            $stmtSub = $conn->prepare($sqlSub);
+            $stmtSub->bind_param('i', $cat['id']);
+        }
+
+        $stmtSub->execute();
+        $resultSub = $stmtSub->get_result();
+        $subcategories = [];
+
+        while ($row = $resultSub->fetch_assoc()) {
+            // Add full image URL
+            if (!empty($row['imageUrl'])) {
+                $baseUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://" . $_SERVER['HTTP_HOST'];
+                $row['image_url'] = rtrim($baseUrl, '/') . '/' . ltrim($row['imageUrl'], '/');
+            } else {
+                $row['image_url'] = null;
+            }
+
+            $row['discount'] = $row['discount'] ?? 0;
+            $row['available'] = $row['available'] ?? 1;
+            $row['originalPricePerUnit'] = $row['originalPricePerUnit'] ?? $row['pricePerUnit'];
+            $row['stock_status'] = ($row['available'] == 1) ? 'in stock' : 'out of stock';
+
+            $subcategories[] = $row;
+        }
+
+        $stmtSub->close();
+        $cat['subcategories'] = $subcategories;
+        $categories[] = $cat;
+    }
+
+    $stmtCat->close();
+    echo json_encode(['status' => 'success', 'categories' => $categories]);
+}
+
+// ---------- PUT ----------
+else if ($method === 'PUT') {
+    if (!$isAuthenticated) {
+        echo json_encode(['status' => 'error', 'message' => 'Authorization token required']);
+        exit;
+    }
+
+    // For PUT with multipart/form-data (using POST with _method=PUT)
+    $data = $_POST;
+    
+    if (!isset($data['id'])) {
+        echo json_encode(['status' => 'error', 'message' => 'id required']);
+        exit;
+    }
+
+    $fields = ['category_id', 'name', 'description', 'pricePerUnit', 'originalPricePerUnit', 'quantity', 'priceType', 'deliveryPriceEnabled', 'minDeliveryDays', 'maxDeliveryDays', 'deliveryPrice', 'discount', 'discountStart', 'discountEnd', 'available'];
+
+    // Calculate discounted price if needed
+    if (isset($data['originalPricePerUnit']) && isset($data['discount'])) {
+        $discount = floatval($data['discount']);
+        $original = floatval($data['originalPricePerUnit']);
+        $data['pricePerUnit'] = $original - ($original * $discount / 100);
+    }
+
+    // Handle NEW image upload ONLY if a file is provided
+    if (isset($_FILES['imageUrl']) && $_FILES['imageUrl']['error'] === UPLOAD_ERR_OK) {
+        $uploadDir = __DIR__ . '/uploads/';
+        if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
+
+        $ext = pathinfo($_FILES['imageUrl']['name'], PATHINFO_EXTENSION);
+        $filename = 'subcategory_' . $vendorId . '_' . time() . '.' . $ext;
+        $targetPath = $uploadDir . $filename;
+
+        if (move_uploaded_file($_FILES['imageUrl']['tmp_name'], $targetPath)) {
+            $data['imageUrl'] = 'uploads/' . $filename;
+            
+            // Add imageUrl to fields to update
+            if (!in_array('imageUrl', $fields)) {
+                $fields[] = 'imageUrl';
+            }
+        } else {
+            echo json_encode(['status' => 'error', 'message' => 'Image upload failed']);
+            exit;
+        }
+    }
+
     $set = [];
     $params = [];
     $types = '';
     foreach ($fields as $f) {
         if (isset($data[$f])) {
+            if ($f === 'available') {
+                $data[$f] = (in_array($data[$f], [1, '1', true, 'true'])) ? 1 : 0;
+            }
             $set[] = "$f = ?";
             $params[] = $data[$f];
-            $types .= is_numeric($data[$f]) && $f !== 'priceType' && $f !== 'name' && $f !== 'description' ? 'd' : 's';
+            $types .= is_numeric($data[$f]) ? 'd' : 's';
         }
     }
-    if (empty($set)) { echo json_encode(['status' => 'error', 'message' => 'No fields to update']); exit; }
+
+    if (empty($set)) {
+        echo json_encode(['status' => 'error', 'message' => 'No fields to update']);
+        exit;
+    }
+
     $params[] = $vendorId;
     $params[] = $data['id'];
     $types .= 'ii';
+
     $sql = 'UPDATE vendor_subcategories SET ' . implode(',', $set) . ' WHERE vendor_id = ? AND id = ?';
     $stmt = $conn->prepare($sql);
     $stmt->bind_param($types, ...$params);
+
     if ($stmt->execute()) {
         echo json_encode(['status' => 'success', 'message' => 'Subcategory updated']);
     } else {
         echo json_encode(['status' => 'error', 'message' => 'Update failed: ' . $conn->error]);
     }
     $stmt->close();
-} else if ($method === 'DELETE') {
-    // Delete subcategory
+}
+
+// ---------- DELETE ----------
+else if ($method === 'DELETE') {
+    if (!$isAuthenticated) {
+        echo json_encode(['status' => 'error', 'message' => 'Authorization token required']);
+        exit;
+    }
+
     parse_str(file_get_contents('php://input'), $data);
-    if (!isset($data['id'])) { echo json_encode(['status' => 'error', 'message' => 'id required']); exit; }
+    if (!isset($data['id'])) {
+        echo json_encode(['status' => 'error', 'message' => 'id required']);
+        exit;
+    }
+
     $sql = 'DELETE FROM vendor_subcategories WHERE vendor_id = ? AND id = ?';
     $stmt = $conn->prepare($sql);
     $stmt->bind_param('ii', $vendorId, $data['id']);
+
     if ($stmt->execute()) {
         echo json_encode(['status' => 'success', 'message' => 'Subcategory deleted']);
     } else {
         echo json_encode(['status' => 'error', 'message' => 'Delete failed: ' . $conn->error]);
     }
     $stmt->close();
-} else {
+}
+
+else {
     echo json_encode(['status' => 'error', 'message' => 'Invalid method']);
 }
+
 $conn->close();
 ?>

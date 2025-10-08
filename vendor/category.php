@@ -1,50 +1,132 @@
 <?php
-// Vendor category API: Add and Get categories for logged-in vendor only
-require __DIR__ . '/../../backend/composer/autoload.php';
-include '../common/db.php';
-include '../common/jwt_secret.php';
+// Vendor Category GET API with JWT authentication, returns vendor info and categories
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/../error.log');
+
+include __DIR__ . '/../common/db.php';
+require __DIR__ . '/../composer/autoload.php';
+include __DIR__ . '/../common/jwt_secret.php';
 
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 
 header('Content-Type: application/json');
+$method = $_SERVER['REQUEST_METHOD'];
 
 $headers = getallheaders();
 $authHeader = $headers['Authorization'] ?? '';
 
-if (!$authHeader || !preg_match('/Bearer\s(.*)/', $authHeader, $matches)) {
-    echo json_encode(['status' => 'error', 'message' => 'Authorization token required']);
+if ($method === 'POST') {
+    // Add new category with image upload
+    $data = $_POST;
+    if (!isset($data['name'])) {
+        echo json_encode(['status' => 'error', 'message' => 'name required']); exit;
+    }
+    // Get vendorId from token
+    if (!$authHeader || !preg_match('/Bearer\s(.*)/', $authHeader, $matches)) {
+        echo json_encode(['status' => 'error', 'message' => 'Authorization token required']); exit;
+    }
+    $jwt = $matches[1];
+    try {
+        $decoded = JWT::decode($jwt, new Key(JWT_SECRET, 'HS256'));
+    } catch (Exception $e) {
+        echo json_encode(['status' => 'error', 'message' => 'Invalid token']); exit;
+    }
+    $vendorId = $decoded->sub;
+    $imagePath = null;
+    if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+        $uploadDir = __DIR__ . '/uploads/vendor_' . $vendorId . '/';
+        if (!is_dir($uploadDir)) { mkdir($uploadDir, 0777, true); }
+        $ext = pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
+        $filename = 'category_' . $vendorId . '_' . time() . '.' . $ext;
+        $targetPath = $uploadDir . $filename;
+        if (move_uploaded_file($_FILES['image']['tmp_name'], $targetPath)) {
+            $imagePath = 'uploads/vendor_' . $vendorId . '/' . $filename;
+        } else {
+            echo json_encode(['status' => 'error', 'message' => 'Image upload failed']); exit;
+        }
+    }
+    $sql = "INSERT INTO categories (name, image, vendor_id) VALUES (?, ?, ?)";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param('ssi', $data['name'], $imagePath, $vendorId);
+    if ($stmt->execute()) {
+        echo json_encode(['status' => 'success', 'message' => 'Category added', 'id' => $conn->insert_id]);
+    } else {
+        echo json_encode(['status' => 'error', 'message' => 'Insert failed: ' . $conn->error]);
+    }
+    $stmt->close();
+    $conn->close();
     exit;
 }
-$jwt = $matches[1];
 
-try {
-    $decoded = JWT::decode($jwt, new Key(JWT_SECRET, 'HS256'));
-} catch (Exception $e) {
-    echo json_encode(['status' => 'error', 'message' => 'Invalid token']);
-    exit;
-}
-
-$vendorId = $decoded->sub;
-
-// Hardcoded fruit categories
-$method = $_SERVER['REQUEST_METHOD'];
 if ($method === 'GET') {
-    $categories = [
-        ['id' => 1, 'category' => 'Apple'],
-        ['id' => 2, 'category' => 'Banana'],
-        ['id' => 3, 'category' => 'Orange'],
-        ['id' => 4, 'category' => 'Mango'],
-        ['id' => 5, 'category' => 'Grapes'],
-        ['id' => 6, 'category' => 'Pineapple'],
-        ['id' => 7, 'category' => 'Papaya'],
-        ['id' => 8, 'category' => 'Watermelon'],
-        ['id' => 9, 'category' => 'Strawberry'],
-        ['id' => 10, 'category' => 'Guava'],
-    ];
-    echo json_encode(['status' => 'success', 'categories' => $categories]);
-} else {
-    echo json_encode(['status' => 'error', 'message' => 'Category creation not allowed. Only GET supported.']);
+    if (!$authHeader || !preg_match('/Bearer\s(.*)/', $authHeader, $matches)) {
+        echo json_encode(['status' => 'error', 'message' => 'Authorization token required']);
+        exit;
+    }
+    $jwt = $matches[1];
+    try {
+        $decoded = JWT::decode($jwt, new Key(JWT_SECRET, 'HS256'));
+    } catch (Exception $e) {
+        echo json_encode(['status' => 'error', 'message' => 'Invalid token']);
+        exit;
+    }
+    $vendorId = $decoded->sub;
+    // Get vendor info
+    $sql = "SELECT id, name, email, mobile FROM vendors WHERE id = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param('i', $vendorId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $vendor = $result->fetch_assoc();
+    $stmt->close();
+    // Get categories for this vendor
+    $sql = "SELECT * FROM categories WHERE vendor_id = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param('i', $vendorId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $categories = [];
+    while ($row = $result->fetch_assoc()) {
+        $categories[] = $row;
+    }
+    $stmt->close();
+    // If no categories, add 10 hardcoded food names and save to DB
+    if (empty($categories)) {
+        $foods = [
+            'Pizza', 'Burger', 'Pasta', 'Sandwich', 'Biryani', 'Dosa', 'Samosa', 'Chowmein', 'Paneer Tikka', 'Chole Bhature'
+        ];
+        $inserted = [];
+        $sqlInsert = "INSERT INTO categories (name, vendor_id) VALUES (?, ?)";
+        $stmtInsert = $conn->prepare($sqlInsert);
+        foreach ($foods as $food) {
+            $stmtInsert->bind_param('si', $food, $vendorId);
+            if ($stmtInsert->execute()) {
+                $inserted[] = [
+                    'id' => $stmtInsert->insert_id,
+                    'name' => $food,
+                    'vendor_id' => $vendorId
+                ];
+            }
+        }
+        $stmtInsert->close();
+        $categories = $inserted;
+    }
+    // Save the response in api_responses table
+    $responseData = json_encode(['status' => 'success', 'vendor' => $vendor, 'categories' => $categories]);
+    // Create table if not exists (id, vendor_id, response, created_at)
+    $sqlCreate = "CREATE TABLE IF NOT EXISTS api_responses (id INT AUTO_INCREMENT PRIMARY KEY, vendor_id INT, response TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)";
+    $conn->query($sqlCreate);
+    // Insert response
+    $sqlResp = "INSERT INTO api_responses (vendor_id, response) VALUES (?, ?)";
+    $stmtResp = $conn->prepare($sqlResp);
+    $stmtResp->bind_param('is', $vendorId, $responseData);
+    $stmtResp->execute();
+    $stmtResp->close();
+    $conn->close();
+    echo $responseData;
+    exit;
 }
-$conn->close();
 ?>
