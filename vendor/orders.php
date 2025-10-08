@@ -303,10 +303,15 @@ else if ($method === 'POST' && !$orderId && !$orderNumber) {
         echo json_encode(['status' => 'error', 'message' => 'Invalid update body']);
     }
 } else if ($method === 'GET' && !$orderId) {
-    // Get all orders for vendor
-    $sql = 'SELECT * FROM orders WHERE vendor_id = ? ORDER BY created_at DESC';
+    // Get all orders for the logged-in user (by user_email from token)
+    $userEmail = isset($decoded->email) ? $decoded->email : null;
+    if (!$userEmail) {
+        echo json_encode(['status' => 'error', 'message' => 'User email not found in token']);
+        exit;
+    }
+    $sql = 'SELECT * FROM orders WHERE user_email = ? ORDER BY created_at DESC';
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param('i', $vendorId);
+    $stmt->bind_param('s', $userEmail);
     $stmt->execute();
     $result = $stmt->get_result();
     $orders = [];
@@ -349,7 +354,8 @@ else if ($method === 'POST' && !$orderId && !$orderNumber) {
     $stmt->close();
     echo json_encode([
         'status' => 'success',
-        'orders' => $orders
+        'orders' => $orders,
+        'user_token' => $jwt
     ]);
 } else {
     echo json_encode(['status' => 'error', 'message' => 'Invalid method or missing id']);
