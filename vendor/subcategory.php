@@ -64,16 +64,14 @@ if ($method === 'POST') {
 
     // Handle image upload
     $imageUrl = null;
+    $uploadDir = __DIR__ . '/uploads/subcategory_images/';
+    if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
     if (isset($_FILES['imageUrl']) && $_FILES['imageUrl']['error'] === UPLOAD_ERR_OK) {
-        $uploadDir = __DIR__ . '/uploads/';
-        if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
-
         $ext = pathinfo($_FILES['imageUrl']['name'], PATHINFO_EXTENSION);
         $filename = 'subcategory_' . $vendorId . '_' . time() . '.' . $ext;
         $targetPath = $uploadDir . $filename;
-
         if (move_uploaded_file($_FILES['imageUrl']['tmp_name'], $targetPath)) {
-            $imageUrl = 'uploads/' . $filename;
+            $imageUrl = 'uploads/subcategory_images/' . $filename;
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Image upload failed']);
             exit;
