@@ -74,33 +74,20 @@ if ($normType === 'order') {
     $stmt->bind_param('s', $id);
 } elseif ($normType === 'mealbox') {
     // Try several candidate columns in meal_box_orders to find the id
-    $table = 'order_number';
-    $user_field = 'user_id';
+    $table = 'meal_box_orders';
     $id = $idRaw;
-
-    // candidate columns to try (in order)
-    $candidates = ['order_number', 'order_number', 'order_number', 'id'];
+    $candidates = ['order_number', 'id'];
     foreach ($candidates as $col) {
         $sql = "SELECT * FROM $table WHERE $col = ? LIMIT 1";
-        try {
-            $stmt = $conn->prepare($sql);
-        } catch (Exception $e) {
-            // prepare failed (likely unknown column) — skip this candidate
-            continue;
-        }
-        if (!$stmt) {
-            // prepare returned false — skip
-            continue;
-        }
-        if (ctype_digit($id)) {
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) continue;
+        if ($col === 'id' && ctype_digit($id)) {
             $tmp = intval($id);
             $stmt->bind_param('i', $tmp);
         } else {
             $stmt->bind_param('s', $id);
         }
-        // execute and check result
         if (!$stmt->execute()) {
-            // execution failed for this candidate — close and continue
             $stmt->close();
             continue;
         }

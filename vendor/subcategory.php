@@ -206,14 +206,18 @@ elseif ($method === 'PUT') {
         exit;
     }
 
-    // For PUT with multipart/form-data (using POST with _method=PUT)
-    $data = $_POST;
-    
+    // For PUT: read input from php://input for x-www-form-urlencoded
+    if ($_SERVER['CONTENT_TYPE'] === 'application/x-www-form-urlencoded') {
+        parse_str(file_get_contents('php://input'), $data);
+    } else {
+        $data = $_POST;
+    }
     if (!isset($data['id'])) {
         echo json_encode(['status' => 'error', 'message' => 'id required']);
         exit;
     }
 
+    // Only update provided fields
     $fields = ['category_id', 'name', 'description', 'pricePerUnit', 'originalPricePerUnit', 'quantity', 'priceType', 'deliveryPriceEnabled', 'minDeliveryDays', 'maxDeliveryDays', 'deliveryPrice', 'discount', 'discountStart', 'discountEnd', 'available'];
 
     // Calculate discounted price if needed
@@ -234,7 +238,6 @@ elseif ($method === 'PUT') {
 
         if (move_uploaded_file($_FILES['imageUrl']['tmp_name'], $targetPath)) {
             $data['imageUrl'] = 'vendor/uploads/subcategory_images/' . $filename;
-            // Add imageUrl to fields to update
             if (!in_array('imageUrl', $fields)) {
                 $fields[] = 'imageUrl';
             }
@@ -244,17 +247,37 @@ elseif ($method === 'PUT') {
         }
     }
 
+    // Only allow updating discount fields if only those are provided
+    $discountFields = ['discount', 'discountStart', 'discountEnd'];
+    $updateOnlyDiscount = true;
+    foreach ($data as $key => $val) {
+        if ($key !== 'id' && !in_array($key, $discountFields)) {
+            $updateOnlyDiscount = false;
+            break;
+        }
+    }
+
     $set = [];
     $params = [];
     $types = '';
-    foreach ($fields as $f) {
-        if (isset($data[$f])) {
-            if ($f === 'available') {
-                $data[$f] = (in_array($data[$f], [1, '1', true, 'true'])) ? 1 : 0;
+    if ($updateOnlyDiscount) {
+        foreach ($discountFields as $f) {
+            if (isset($data[$f])) {
+                $set[] = "$f = ?";
+                $params[] = $data[$f];
+                $types .= is_numeric($data[$f]) ? 'd' : 's';
             }
-            $set[] = "$f = ?";
-            $params[] = $data[$f];
-            $types .= is_numeric($data[$f]) ? 'd' : 's';
+        }
+    } else {
+        foreach ($fields as $f) {
+            if (isset($data[$f])) {
+                if ($f === 'available') {
+                    $data[$f] = (in_array($data[$f], [1, '1', true, 'true'])) ? 1 : 0;
+                }
+                $set[] = "$f = ?";
+                $params[] = $data[$f];
+                $types .= is_numeric($data[$f]) ? 'd' : 's';
+            }
         }
     }
 

@@ -276,6 +276,7 @@ if ($method === 'GET' && $trackingId) {
         $resultFindId = $stmtFindId->get_result();
         if ($rowFindId = $resultFindId->fetch_assoc()) {
             $realOrderId = $rowFindId['id'];
+            $stmtFindId->close();
         } else {
             $stmtFindId->close();
             // Try global order_number (no vendor_id restriction)
@@ -286,14 +287,13 @@ if ($method === 'GET' && $trackingId) {
             $resultFindIdGlobal = $stmtFindIdGlobal->get_result();
             if ($rowFindIdGlobal = $resultFindIdGlobal->fetch_assoc()) {
                 $realOrderId = $rowFindIdGlobal['id'];
+                $stmtFindIdGlobal->close();
             } else {
                 echo json_encode(['status' => 'error', 'message' => 'Order not found for order_number']);
                 $stmtFindIdGlobal->close();
                 exit;
             }
-            $stmtFindIdGlobal->close();
         }
-        $stmtFindId->close();
     }
 
     // Always check current status first
@@ -304,9 +304,18 @@ if ($method === 'GET' && $trackingId) {
     $resultCheck = $stmtCheck->get_result();
     $rowCheck = $resultCheck->fetch_assoc();
     $stmtCheck->close();
-    if ($rowCheck && $rowCheck['status'] === 'delivered') {
-        echo json_encode(['status' => 'error', 'message' => 'Order already delivered, status cannot be changed']);
-        exit;
+    if ($rowCheck) {
+        if ($rowCheck['status'] === 'delivered') {
+            echo json_encode(['status' => 'error', 'message' => 'Order already delivered, status cannot be changed']);
+            exit;
+        }
+        if ($rowCheck['status'] === 'cancelled') {
+            // For deliver, block cancelled; for confirm/cancel, allow logic below
+            if (isset($input['delivered']) && $input['delivered'] == 1 && isset($input['fromDate'])) {
+                echo json_encode(['status' => 'error', 'message' => 'Cannot deliver a cancelled order']);
+                exit;
+            }
+        }
     }
     // Confirm
     if (isset($input['deliveryTime']) && isset($input['deliveryDate'])) {
@@ -334,8 +343,13 @@ if ($method === 'GET' && $trackingId) {
     }
     // Deliver
     else if (isset($input['delivered']) && $input['delivered'] == 1 && isset($input['fromDate'])) {
-        if ($rowCheck && $rowCheck['status'] === 'cancelled') {
-            echo json_encode(['status' => 'error', 'message' => 'Cannot deliver a cancelled order']);
+        // Only allow if not cancelled or delivered
+        if ($rowCheck && ($rowCheck['status'] === 'cancelled' || $rowCheck['status'] === 'delivered')) {
+            if ($rowCheck['status'] === 'cancelled') {
+                echo json_encode(['status' => 'error', 'message' => 'Cannot deliver a cancelled order']);
+            } else {
+                echo json_encode(['status' => 'error', 'message' => 'Order already delivered']);
+            }
             exit;
         }
         $deliveryDate = $input['fromDate'];

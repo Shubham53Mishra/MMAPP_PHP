@@ -218,25 +218,6 @@ else if ($method === 'POST' && !$orderId && !$orderNumber) {
         }
     }
     $input = json_decode(file_get_contents('php://input'), true);
-    // ...existing code for status update...
-    // Status update (confirm/cancel/deliver) by id or order_number
-    // If order_number is provided, lookup order id
-    if ($orderNumber && !$orderId) {
-        $sqlFindId = "SELECT id FROM orders WHERE order_number = ? AND vendor_id = ?";
-        $stmtFindId = $conn->prepare($sqlFindId);
-        $stmtFindId->bind_param('si', $orderNumber, $vendorId);
-        $stmtFindId->execute();
-        $resultFindId = $stmtFindId->get_result();
-        $rowFindId = $resultFindId->fetch_assoc();
-        $stmtFindId->close();
-        if ($rowFindId) {
-            $orderId = $rowFindId['id'];
-        } else {
-            echo json_encode(['status' => 'error', 'message' => 'Order not found for order_number']);
-            exit;
-        }
-    }
-    $input = json_decode(file_get_contents('php://input'), true);
     // Confirm order
     if (isset($input['deliveryTime']) && isset($input['deliveryDate'])) {
         $sql = "UPDATE orders SET status='confirmed', delivery_time=?, delivery_date=? WHERE vendor_id=? AND id=?";
@@ -251,7 +232,7 @@ else if ($method === 'POST' && !$orderId && !$orderNumber) {
         ]);
     // Cancel order
     } else if (isset($input['reason'])) {
-        // Check if already cancelled
+        // Check if already cancelled or delivered
         $sqlCheck = "SELECT status FROM orders WHERE vendor_id=? AND id=?";
         $stmtCheck = $conn->prepare($sqlCheck);
         $stmtCheck->bind_param('ii', $vendorId, $orderId);
@@ -259,9 +240,15 @@ else if ($method === 'POST' && !$orderId && !$orderNumber) {
         $resultCheck = $stmtCheck->get_result();
         $rowCheck = $resultCheck->fetch_assoc();
         $stmtCheck->close();
-        if ($rowCheck && $rowCheck['status'] === 'cancelled') {
-            echo json_encode(['status' => 'error', 'message' => 'Order already cancelled']);
-            exit;
+        if ($rowCheck) {
+            if ($rowCheck['status'] === 'cancelled') {
+                echo json_encode(['status' => 'error', 'message' => 'Order already cancelled']);
+                exit;
+            }
+            if ($rowCheck['status'] === 'delivered') {
+                echo json_encode(['status' => 'error', 'message' => 'Order already delivered, cannot cancel']);
+                exit;
+            }
         }
         $sql = "UPDATE orders SET status='cancelled', cancel_reason=? WHERE vendor_id=? AND id=?";
         $stmt = $conn->prepare($sql);
@@ -386,7 +373,14 @@ else if ($method === 'POST' && !$orderId && !$orderNumber) {
         'vendor_token' => $isVendor ? $jwt : null
     ]);
 } else {
-    echo json_encode(['status' => 'error', 'message' => 'Invalid method or missing id']);
+    // Better error messages for missing id/order_number/tracking
+    if ($method === 'POST') {
+        echo json_encode(['status' => 'error', 'message' => 'Missing id or order_number for update. Please provide ?id= or ?order_number= in URL.']);
+    } else if ($method === 'GET') {
+        echo json_encode(['status' => 'error', 'message' => 'Missing id, order_number, or tracking parameter for GET request.']);
+    } else {
+        echo json_encode(['status' => 'error', 'message' => 'Invalid method.']);
+    }
 }
 $conn->close();
 ?>
