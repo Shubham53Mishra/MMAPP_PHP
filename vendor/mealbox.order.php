@@ -194,26 +194,69 @@ if ($method === 'GET' && $trackingId) {
     $stmt->execute();
     $result = $stmt->get_result();
     while ($row = $result->fetch_assoc()) {
-        $row['items'] = $row['items'] ? json_decode($row['items'], true) : [];
+        $itemsArr = $row['items'] ? json_decode($row['items'], true) : [];
+        $formattedItems = [];
         $allMealbox = true;
-        foreach ($row['items'] as &$it) {
+        foreach ($itemsArr as $it) {
             if (!isset($it['type']) || $it['type'] !== 'mealbox') {
                 $allMealbox = false;
                 break;
             }
-            // Enrich mealbox info for each item
+            $mealboxInfo = null;
             if (isset($it['mealbox'])) {
                 $sqlMealbox = "SELECT * FROM vendor_meals WHERE id = ?";
                 $stmtMealbox = $conn->prepare($sqlMealbox);
                 $stmtMealbox->bind_param('i', $it['mealbox']);
                 $stmtMealbox->execute();
                 $resultMealbox = $stmtMealbox->get_result();
-                $it['mealbox_info'] = $resultMealbox->fetch_assoc();
+                $mealboxInfo = $resultMealbox->fetch_assoc();
                 $stmtMealbox->close();
+                // Fix: decode items field if it's a JSON string or array of JSON strings
+                if ($mealboxInfo && isset($mealboxInfo['items'])) {
+                    $decodedItems = json_decode($mealboxInfo['items'], true);
+                    if (json_last_error() === JSON_ERROR_NONE && $decodedItems !== null) {
+                        // If decodedItems is an array of strings, try to decode each string
+                        if (is_array($decodedItems) && count($decodedItems) > 0 && is_string($decodedItems[0])) {
+                            $finalItems = [];
+                            $joined = '[' . implode(',', $decodedItems) . ']';
+                            $tryArray = json_decode($joined, true);
+                            if (json_last_error() === JSON_ERROR_NONE && is_array($tryArray)) {
+                                $finalItems = $tryArray;
+                            } else {
+                                foreach ($decodedItems as $itemStr) {
+                                    $itemStr = trim($itemStr);
+                                    $itemObj = json_decode($itemStr, true);
+                                    if (json_last_error() === JSON_ERROR_NONE && $itemObj !== null) {
+                                        $finalItems[] = $itemObj;
+                                    } else {
+                                        // fallback: try to fix broken JSON (remove leading/trailing brackets/quotes)
+                                        $fixed = preg_replace('/^[\[\"]+|[\]\"]+$/', '', $itemStr);
+                                        $itemObj = json_decode($fixed, true);
+                                        if (json_last_error() === JSON_ERROR_NONE && $itemObj !== null) {
+                                            $finalItems[] = $itemObj;
+                                        } else {
+                                            $finalItems[] = $itemStr;
+                                        }
+                                    }
+                                }
+                            }
+                            $mealboxInfo['items'] = $finalItems;
+                        } else {
+                            $mealboxInfo['items'] = $decodedItems;
+                        }
+                    }
+                }
             }
+            $formattedItems[] = [
+                'type' => 'mealbox',
+                'mealbox_id' => $it['mealbox'] ?? null,
+                'quantity' => $it['quantity'] ?? 1,
+                'deliveryDays' => $it['deliveryDays'] ?? null,
+                'mealbox_info' => $mealboxInfo
+            ];
         }
-        unset($it);
-        if ($allMealbox && count($row['items']) > 0) {
+        if ($allMealbox && count($formattedItems) > 0) {
+            $row['items'] = $formattedItems;
             $rows[] = $row;
         }
     }
@@ -233,26 +276,34 @@ if ($method === 'GET' && $trackingId) {
     $result = $stmt->get_result();
     $row = $result->fetch_assoc();
     if ($row) {
-        $row['items'] = $row['items'] ? json_decode($row['items'], true) : [];
+        $itemsArr = $row['items'] ? json_decode($row['items'], true) : [];
+        $formattedItems = [];
         $allMealbox = true;
-        foreach ($row['items'] as &$it) {
+        foreach ($itemsArr as $it) {
             if (!isset($it['type']) || $it['type'] !== 'mealbox') {
                 $allMealbox = false;
                 break;
             }
-            // Enrich mealbox info
+            $mealboxInfo = null;
             if (isset($it['mealbox'])) {
                 $sqlMealbox = "SELECT * FROM vendor_meals WHERE id = ?";
                 $stmtMealbox = $conn->prepare($sqlMealbox);
                 $stmtMealbox->bind_param('i', $it['mealbox']);
                 $stmtMealbox->execute();
                 $resultMealbox = $stmtMealbox->get_result();
-                $it['mealbox_info'] = $resultMealbox->fetch_assoc();
+                $mealboxInfo = $resultMealbox->fetch_assoc();
                 $stmtMealbox->close();
             }
+            $formattedItems[] = [
+                'type' => 'mealbox',
+                'mealbox_id' => $it['mealbox'] ?? null,
+                'quantity' => $it['quantity'] ?? 1,
+                'deliveryDays' => $it['deliveryDays'] ?? null,
+                'mealbox_info' => $mealboxInfo
+            ];
         }
-        unset($it);
-        if ($allMealbox && count($row['items']) > 0) {
+        if ($allMealbox && count($formattedItems) > 0) {
+            $row['items'] = $formattedItems;
             echo json_encode(['status' => 'success', 'order' => $row]);
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Not a mealbox order']);
