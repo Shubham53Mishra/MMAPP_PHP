@@ -1,16 +1,33 @@
 <?php
 // push-status.php
-// Usage: push-status.php?orderId=123&type=order|mealbox&status=STATUS
+// Usage: push-status.php?orderId=MMF...&type=order|mealbox&status=STATUS
 
-// This script connects to the WebSocket server and pushes a status update
+// This script connects to the WebSocket server and pushes a status update.
+// It uses the textalk/websocket client. Install with:
+// composer require textalk/websocket
 
-$orderId = isset($_GET['orderId']) ? intval($_GET['orderId']) : 0;
+require_once __DIR__ . '/../vendor/autoload.php';
+
+if (!class_exists('WebSocket\\Client')) {
+    // Try alternative autoload path if running from a different directory
+    $altAutoload = __DIR__ . '/../../vendor/autoload.php';
+    if (file_exists($altAutoload)) {
+        require_once $altAutoload;
+    }
+}
+
+// Ensure the use statement is after autoloaders
+use WebSocket\Client;
+
+
+header('Content-Type: application/json');
+$orderId = isset($_GET['orderId']) ? $_GET['orderId'] : '';
 $type = isset($_GET['type']) ? $_GET['type'] : '';
 $status = isset($_GET['status']) ? $_GET['status'] : '';
 
-if (!$orderId || !$type || !$status) {
+if ($orderId === '' || $type === '' || $status === '') {
     http_response_code(400);
-    echo 'Missing parameters';
+    echo json_encode(['success' => false, 'message' => 'Missing parameters: orderId, type, status required']);
     exit;
 }
 
@@ -18,8 +35,6 @@ $wsHost = '127.0.0.1';
 $wsPort = 8080;
 $wsUrl = "ws://$wsHost:$wsPort";
 
-// Use Ratchet's websocket client (or fallback to a simple PHP WebSocket client)
-// We'll use text sockets for simplicity
 $payload = json_encode([
     'broadcast' => true,
     'orderId' => $orderId,
@@ -27,13 +42,19 @@ $payload = json_encode([
     'status' => $status
 ]);
 
-$fp = fsockopen($wsHost, $wsPort, $errno, $errstr, 2);
-if (!$fp) {
-    echo "Could not connect to WebSocket server: $errstr ($errno)\n";
-    exit;
+try {
+    // Ensure the client class exists
+    if (!class_exists('WebSocket\\Client')) {
+        throw new Exception('WebSocket client library not installed. Run: composer require textalk/websocket');
+    }
+    // Create a WebSocket client and send payload
+    $client = new Client($wsUrl, ['timeout' => 3]);
+    $client->send($payload);
+    $client->close();
+    echo json_encode(['success' => true, 'message' => 'Status pushed']);
+} catch (Exception $e) {
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => 'Could not push status', 'error' => $e->getMessage()]);
 }
 
-// Simple handshake (not a full WebSocket handshake, for demo only)
-fwrite($fp, $payload . "\n");
-fclose($fp);
-echo 'Status pushed';
+?>

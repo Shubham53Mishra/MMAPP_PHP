@@ -49,7 +49,13 @@ if ($method === 'GET') {
     $result = $stmt->get_result();
     if ($row = $result->fetch_assoc()) {
         $baseUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://" . $_SERVER['HTTP_HOST'];
-        $row['image_url'] = !empty($row['image']) ? rtrim($baseUrl, '/') . '/' . ltrim($row['image'], '/') : null;
+        $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME']));
+        $scriptDir = ($scriptDir === '/' || $scriptDir === '\\') ? '' : rtrim($scriptDir, '/');
+        if (!empty($row['image'])) {
+            $row['image_url'] = rtrim($baseUrl, '/') . $scriptDir . '/' . ltrim($row['image'], '/');
+        } else {
+            $row['image_url'] = null;
+        }
         // Fetch all addresses for this user
         $sql2 = "SELECT id, address, city, state, pincode, label FROM user_addresses WHERE user_id = ? ORDER BY id DESC";
         $stmt2 = $conn->prepare($sql2);
@@ -90,7 +96,7 @@ if ($method === 'POST') {
     // Profile image update (optional)
     $dbPath = null;
     if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
-        $uploadDir = __DIR__ . '/../../upload/profile/';
+        $uploadDir = rtrim($_SERVER['DOCUMENT_ROOT'], '/') . '/upload/profile/';
         if (!file_exists($uploadDir)) mkdir($uploadDir, 0777, true);
         $ext = pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
         $fileName = 'profile_' . $userId . '_' . time() . '.' . $ext;

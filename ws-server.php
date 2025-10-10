@@ -21,13 +21,39 @@ class OrderStatusWsServer implements MessageComponentInterface {
 
     public function onMessage(ConnectionInterface $from, $msg) {
         $data = json_decode($msg, true);
+        if (!is_array($data)) return;
+
+        // Client subscription: { "subscribe": true, "orderId": "MMF..." }
         if (isset($data['subscribe']) && isset($data['orderId'])) {
-            $orderId = $data['orderId'];
+            $orderId = (string)$data['orderId'];
             $from->orderId = $orderId;
             if (!isset($this->orderClients[$orderId])) {
                 $this->orderClients[$orderId] = [];
             }
             $this->orderClients[$orderId][$from->resourceId] = $from;
+            return;
+        }
+
+        // Broadcast message from internal push script: { "broadcast": true, "orderId": "MMF..", "type": "order|mealbox", "status": "processing", ... }
+        if (!empty($data['broadcast']) && isset($data['orderId'])) {
+            $orderId = (string)$data['orderId'];
+            $status = isset($data['status']) ? $data['status'] : null;
+            $type = isset($data['type']) ? $data['type'] : 'order';
+
+            // Build event name
+            $event = ($type === 'mealbox' || strtolower($type) === 'meal') ? 'mealboxOrderTrackingUpdated' : 'orderTrackingUpdated';
+
+            // prepare payload to send to clients
+            $payload = [
+                'event' => $event,
+                'data' => [
+                    'order_number' => $orderId,
+                    'status' => $status,
+                ],
+            ];
+
+            $this->broadcastStatus($orderId, $payload);
+            return;
         }
     }
 
@@ -45,8 +71,10 @@ class OrderStatusWsServer implements MessageComponentInterface {
     // Call this from your PHP API to broadcast status
     public function broadcastStatus($orderId, $status) {
         if (isset($this->orderClients[$orderId])) {
+            $payload = is_array($status) ? $status : ['event' => 'orderTrackingUpdated', 'data' => ['order_number' => $orderId, 'status' => $status]];
+            $json = json_encode($payload);
             foreach ($this->orderClients[$orderId] as $client) {
-                $client->send(json_encode(['orderId' => $orderId, 'status' => $status]));
+                $client->send($json);
             }
         }
     }

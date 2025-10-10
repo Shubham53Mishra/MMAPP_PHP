@@ -1,0 +1,110 @@
+[09-Oct-2025 09:14:30 UTC] PHP Fatal error:  Uncaught mysqli_sql_exception: Access denied for user 'u262838097_CAFE'@'127.0.0.1' (using password: YES) in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/common_cafe/db.php:8
+Stack trace:
+#0 /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/common_cafe/db.php(8): mysqli->__construct()
+#1 /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/register.php(10): include('/home/u26283809...')
+#2 {main}
+  thrown in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/common_cafe/db.php on line 8
+[09-Oct-2025 09:15:19 UTC] PHP Parse error:  syntax error, unexpected token "<", expecting end of file in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/common_cafe/db.php on line 3
+[09-Oct-2025 09:15:58 UTC] PHP Fatal error:  Uncaught mysqli_sql_exception: Access denied for user 'u262838097_CAFE'@'localhost' (using password: YES) in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/common_cafe/db.php:9
+Stack trace:
+#0 /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/common_cafe/db.php(9): mysqli->__construct()
+#1 /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/register.php(10): include('/home/u26283809...')
+#2 {main}
+  thrown in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/common_cafe/db.php on line 9
+[09-Oct-2025 09:16:54 UTC] PHP Fatal error:  Uncaught mysqli_sql_exception: Access denied for user 'u262838097_CAFE'@'localhost' (using password: YES) in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/common_cafe/db.php:9
+Stack trace:
+#0 /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/common_cafe/db.php(9): mysqli->__construct()
+#1 /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/register.php(10): include('/home/u26283809...')
+#2 {main}
+  thrown in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/common_cafe/db.php on line 9
+[09-Oct-2025 09:18:42 UTC] PHP Fatal error:  Uncaught mysqli_sql_exception: Table 'u262838097_CAFE.users' doesn't exist in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/register.php:37
+Stack trace:
+#0 /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/register.php(37): mysqli->prepare()
+#1 {main}
+  thrown in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/register.php on line 37
+[09-Oct-2025 09:22:45 UTC] LOGIN DEBUG: {"login_input":"dhokeprajyot7@gmail.com","password_input":"123456","db_password":"$2y$10$818CAqfTBvKp1ksuOx1CvuVCj3V9i3LyeEcfpFkPx4Y8ovNoBGeqe","password_verify":true}
+[09-Oct-2025 09:25:00 UTC] LOGIN DEBUG: {"login_input":"dhokeprajyot@gmail.com","password_input":"123456","db_password":"$2y$10$erRQs3xmfn535Hm6vBSY0e9pclm7EFEHVOnkq6kejDtpYFt7FxuBK","password_verify":true}
+[09-Oct-2025 09:29:36 UTC] LOGIN DEBUG: {"login_input":"prajyotdhoke4@gmail.com","password_input":"123456","db_password":"$2y$10$shiaRmIO.VsBIhLzoZjtMehVuSzlUCSrUklpYQ9AXTkGlKMh9DLJ.","password_verify":true}
+[09-Oct-2025 09:39:55 UTC] PHP Fatal error:  Uncaught Error: Class "ComposerAutoloaderInit20fad51902f91e7fd3039e016a6556b5" not found in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/autoload.php:22
+Stack trace:
+#0 /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/forgot_password.php(14): require_once()
+#1 {main}
+  thrown in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/autoload.php on line 22
+[09-Oct-2025 10:06:49 UTC] LOGIN DEBUG: {"login_input":"prajyotdhoke.skn.entc@gmail.com","password_input":"123456","db_password":"$2y$10$xx5swAZtwwCFUNTBnT6pLOv.6tX.hy2zwMHMJn9eb\/PAbXzIDCQWa","password_verify":true}
+[09-Oct-2025 10:08:28 UTC] LOGIN DEBUG: {"login_input":"prajyotdhoke.skn.entc@gmail.com","password_input":"test456","db_password":"$2y$10$HarJKVz\/5LcZ5olqCZnzkOdUcT9kW0B\/6tag8PRhh\/PT\/081SenQq","password_verify":true}
+[09-Oct-2025 10:09:48 UTC] PHP Warning:  require(/home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/../composer/autoload.php): Failed to open stream: No such file or directory in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/profile.php on line 11
+[09-Oct-2025 10:09:48 UTC] PHP Fatal error:  Uncaught Error: Failed opening required '/home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/../composer/autoload.php' (include_path='.:/opt/alt/php82/usr/share/pear:/opt/alt/php82/usr/share/php:/usr/share/pear:/usr/share/php') in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/profile.php:11
+Stack trace:
+#0 {main}
+  thrown in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/profile.php on line 11
+[09-Oct-2025 10:11:32 UTC] PHP Warning:  require(/home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/../composer/autoload.php): Failed to open stream: No such file or directory in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/profile.php on line 11
+[09-Oct-2025 10:11:32 UTC] PHP Fatal error:  Uncaught Error: Failed opening required '/home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/../composer/autoload.php' (include_path='.:/opt/alt/php82/usr/share/pear:/opt/alt/php82/usr/share/php:/usr/share/pear:/usr/share/php') in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/profile.php:11
+Stack trace:
+#0 {main}
+  thrown in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/profile.php on line 11
+[09-Oct-2025 10:11:38 UTC] PHP Warning:  require(/home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/../composer/autoload.php): Failed to open stream: No such file or directory in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/profile.php on line 11
+[09-Oct-2025 10:11:38 UTC] PHP Fatal error:  Uncaught Error: Failed opening required '/home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/../composer/autoload.php' (include_path='.:/opt/alt/php82/usr/share/pear:/opt/alt/php82/usr/share/php:/usr/share/pear:/usr/share/php') in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/profile.php:11
+Stack trace:
+#0 {main}
+  thrown in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/profile.php on line 11
+[09-Oct-2025 10:12:16 UTC] PHP Warning:  require(/home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/../composer/autoload.php): Failed to open stream: No such file or directory in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/profile.php on line 11
+[09-Oct-2025 10:12:16 UTC] PHP Fatal error:  Uncaught Error: Failed opening required '/home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/../composer/autoload.php' (include_path='.:/opt/alt/php82/usr/share/pear:/opt/alt/php82/usr/share/php:/usr/share/pear:/usr/share/php') in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/profile.php:11
+Stack trace:
+#0 {main}
+  thrown in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/profile.php on line 11
+[09-Oct-2025 10:12:53 UTC] PHP Fatal error:  Uncaught mysqli_sql_exception: Table 'u262838097_CAFE.user_addresses' doesn't exist in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/profile.php:55
+Stack trace:
+#0 /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/profile.php(55): mysqli->prepare()
+#1 {main}
+  thrown in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/user/profile.php on line 55
+[09-Oct-2025 10:22:58 UTC] LOGIN DEBUG: {"login_input":"prajyotdhoke.skn.entc@gmail.com","password_input":"test456","db_password":"$2y$10$HarJKVz\/5LcZ5olqCZnzkOdUcT9kW0B\/6tag8PRhh\/PT\/081SenQq","password_verify":true}
+[09-Oct-2025 10:23:37 UTC] LOGIN DEBUG: {"login_input":"prajyotdhoke.skn.entc@gmail.com","password_input":"test456","db_password":"$2y$10$HarJKVz\/5LcZ5olqCZnzkOdUcT9kW0B\/6tag8PRhh\/PT\/081SenQq","password_verify":true}
+[09-Oct-2025 10:28:53 UTC] PHP Warning:  include(../common/db.php): Failed to open stream: No such file or directory in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 8
+[09-Oct-2025 10:28:53 UTC] PHP Warning:  include(): Failed opening '../common/db.php' for inclusion (include_path='.:/opt/alt/php82/usr/share/pear:/opt/alt/php82/usr/share/php:/usr/share/pear:/usr/share/php') in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 8
+[09-Oct-2025 10:28:53 UTC] PHP Warning:  Undefined variable $conn in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 25
+[09-Oct-2025 10:28:53 UTC] PHP Fatal error:  Uncaught Error: Call to a member function prepare() on null in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php:25
+Stack trace:
+#0 {main}
+  thrown in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 25
+[09-Oct-2025 10:30:30 UTC] PHP Warning:  include(../common/db.php): Failed to open stream: No such file or directory in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 8
+[09-Oct-2025 10:30:30 UTC] PHP Warning:  include(): Failed opening '../common/db.php' for inclusion (include_path='.:/opt/alt/php82/usr/share/pear:/opt/alt/php82/usr/share/php:/usr/share/pear:/usr/share/php') in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 8
+[09-Oct-2025 10:30:30 UTC] PHP Warning:  Undefined variable $conn in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 25
+[09-Oct-2025 10:30:30 UTC] PHP Fatal error:  Uncaught Error: Call to a member function prepare() on null in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php:25
+Stack trace:
+#0 {main}
+  thrown in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 25
+[09-Oct-2025 10:32:23 UTC] PHP Warning:  include(../common/db.php): Failed to open stream: No such file or directory in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 8
+[09-Oct-2025 10:32:23 UTC] PHP Warning:  include(): Failed opening '../common/db.php' for inclusion (include_path='.:/opt/alt/php82/usr/share/pear:/opt/alt/php82/usr/share/php:/usr/share/pear:/usr/share/php') in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 8
+[09-Oct-2025 10:32:23 UTC] PHP Warning:  Undefined variable $conn in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 25
+[09-Oct-2025 10:32:23 UTC] PHP Fatal error:  Uncaught Error: Call to a member function prepare() on null in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php:25
+Stack trace:
+#0 {main}
+  thrown in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 25
+[09-Oct-2025 10:35:01 UTC] PHP Warning:  include(../common/db.php): Failed to open stream: No such file or directory in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 8
+[09-Oct-2025 10:35:01 UTC] PHP Warning:  include(): Failed opening '../common/db.php' for inclusion (include_path='.:/opt/alt/php82/usr/share/pear:/opt/alt/php82/usr/share/php:/usr/share/pear:/usr/share/php') in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 8
+[09-Oct-2025 10:35:01 UTC] PHP Warning:  Undefined variable $conn in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 25
+[09-Oct-2025 10:35:01 UTC] PHP Fatal error:  Uncaught Error: Call to a member function prepare() on null in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php:25
+Stack trace:
+#0 {main}
+  thrown in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 25
+[09-Oct-2025 10:35:30 UTC] PHP Warning:  include(../common/db.php): Failed to open stream: No such file or directory in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 8
+[09-Oct-2025 10:35:30 UTC] PHP Warning:  include(): Failed opening '../common/db.php' for inclusion (include_path='.:/opt/alt/php82/usr/share/pear:/opt/alt/php82/usr/share/php:/usr/share/pear:/usr/share/php') in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 8
+[09-Oct-2025 10:35:30 UTC] PHP Warning:  Undefined variable $conn in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 25
+[09-Oct-2025 10:35:30 UTC] PHP Fatal error:  Uncaught Error: Call to a member function prepare() on null in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php:25
+Stack trace:
+#0 {main}
+  thrown in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 25
+[09-Oct-2025 10:35:33 UTC] PHP Warning:  include(../common/db.php): Failed to open stream: No such file or directory in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 8
+[09-Oct-2025 10:35:33 UTC] PHP Warning:  include(): Failed opening '../common/db.php' for inclusion (include_path='.:/opt/alt/php82/usr/share/pear:/opt/alt/php82/usr/share/php:/usr/share/pear:/usr/share/php') in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 8
+[09-Oct-2025 10:35:33 UTC] PHP Warning:  Undefined variable $conn in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 25
+[09-Oct-2025 10:35:33 UTC] PHP Fatal error:  Uncaught Error: Call to a member function prepare() on null in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php:25
+Stack trace:
+#0 {main}
+  thrown in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 25
+[09-Oct-2025 10:35:46 UTC] PHP Warning:  include(/../common_cafe/db.php): Failed to open stream: No such file or directory in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 8
+[09-Oct-2025 10:35:46 UTC] PHP Warning:  include(): Failed opening '/../common_cafe/db.php' for inclusion (include_path='.:/opt/alt/php82/usr/share/pear:/opt/alt/php82/usr/share/php:/usr/share/pear:/usr/share/php') in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 8
+[09-Oct-2025 10:35:46 UTC] PHP Warning:  Undefined variable $conn in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 25
+[09-Oct-2025 10:35:46 UTC] PHP Fatal error:  Uncaught Error: Call to a member function prepare() on null in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php:25
+Stack trace:
+#0 {main}
+  thrown in /home/u262838097/domains/munchmartfoods.com/public_html/CAFE/vendor/register.php on line 25

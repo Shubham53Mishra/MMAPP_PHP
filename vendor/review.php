@@ -100,9 +100,12 @@ if($method==='GET'){
         $reviews[] = $row;
     }
 
+    // Get username from JWT token
+    $requestedBy = $decoded->name ?? null;
+
     $stmt->close();
     $conn->close();
-    echo json_encode(['status'=>'success','reviews'=>$reviews]);
+    echo json_encode(['status'=>'success','requested_by'=>$requestedBy,'reviews'=>$reviews]);
     exit;
 }
 

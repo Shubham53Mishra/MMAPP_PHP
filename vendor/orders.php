@@ -305,18 +305,43 @@ else if ($method === 'POST' && !$orderId && !$orderNumber) {
         echo json_encode(['status' => 'error', 'message' => 'Invalid update body']);
     }
 } else if ($method === 'GET' && !$orderId) {
-    // Get all orders for the logged-in user (by user_email from token)
+    // Show orders for logged-in vendor or user
     $userEmail = isset($decoded->email) ? $decoded->email : null;
-    if (!$userEmail) {
-        echo json_encode(['status' => 'error', 'message' => 'User email not found in token']);
-        exit;
+    // More robust vendor token detection: if sub exists and is numeric, treat as vendor
+    $isVendor = isset($decoded->sub) && is_numeric($decoded->sub);
+    $orders = [];
+    if ($isVendor && isset($_GET['vendor_id'])) {
+        // Vendor token and vendor_id param: show all orders for that vendor_id
+        $paramVendorId = intval($_GET['vendor_id']);
+        $sql = 'SELECT * FROM orders WHERE vendor_id = ? ORDER BY created_at DESC';
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('i', $paramVendorId);
+    } else if ($isVendor) {
+        // Vendor token, no vendor_id param: show ALL orders
+        $sql = 'SELECT * FROM orders ORDER BY created_at DESC';
+        $stmt = $conn->prepare($sql);
+    } else if (!$isVendor && isset($_GET['vendor_id'])) {
+        // User token, vendor_id param: show user's orders for that vendor_id
+        if (!$userEmail) {
+            echo json_encode(['status' => 'error', 'message' => 'User email not found in token']);
+            exit;
+        }
+        $paramVendorId = intval($_GET['vendor_id']);
+        $sql = 'SELECT * FROM orders WHERE user_email = ? AND vendor_id = ? ORDER BY created_at DESC';
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('si', $userEmail, $paramVendorId);
+    } else {
+        // User token: show only orders for this user
+        if (!$userEmail) {
+            echo json_encode(['status' => 'error', 'message' => 'User email not found in token']);
+            exit;
+        }
+        $sql = 'SELECT * FROM orders WHERE user_email = ? ORDER BY created_at DESC';
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('s', $userEmail);
     }
-    $sql = 'SELECT * FROM orders WHERE user_email = ? ORDER BY created_at DESC';
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param('s', $userEmail);
     $stmt->execute();
     $result = $stmt->get_result();
-    $orders = [];
     while ($row = $result->fetch_assoc()) {
         // Decode items JSON string to array
         if (isset($row['items'])) {
@@ -357,7 +382,8 @@ else if ($method === 'POST' && !$orderId && !$orderNumber) {
     echo json_encode([
         'status' => 'success',
         'orders' => $orders,
-        'user_token' => $jwt
+        'user_token' => $jwt,
+        'vendor_token' => $isVendor ? $jwt : null
     ]);
 } else {
     echo json_encode(['status' => 'error', 'message' => 'Invalid method or missing id']);

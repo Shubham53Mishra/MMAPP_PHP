@@ -156,18 +156,43 @@ if ($method === 'GET' && $trackingId) {
     $stmt->close();
 
 } else if ($method === 'GET' && !$orderId) {
-    // Show only orders for the logged-in user (by user_email from token)
+    // Show orders for logged-in vendor or user
     $userEmail = isset($decoded->email) ? $decoded->email : null;
-    if (!$userEmail) {
-        echo json_encode(['status' => 'error', 'message' => 'User email not found in token']);
-        exit;
+    // More robust vendor token detection: if sub exists and is numeric, treat as vendor
+    $isVendor = isset($decoded->sub) && is_numeric($decoded->sub);
+    $rows = [];
+    if ($isVendor && isset($_GET['vendor_id'])) {
+        // Vendor token and vendor_id param: show all orders for that vendor_id
+        $paramVendorId = intval($_GET['vendor_id']);
+        $sql = 'SELECT * FROM meal_box_orders WHERE vendor_id = ? ORDER BY created_at DESC';
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('i', $paramVendorId);
+    } else if ($isVendor) {
+        // Vendor token, no vendor_id param: show ALL mealbox orders
+        $sql = 'SELECT * FROM meal_box_orders ORDER BY created_at DESC';
+        $stmt = $conn->prepare($sql);
+    } else if (!$isVendor && isset($_GET['vendor_id'])) {
+        // User token, vendor_id param: show user's mealbox orders for that vendor_id
+        if (!$userEmail) {
+            echo json_encode(['status' => 'error', 'message' => 'User email not found in token']);
+            exit;
+        }
+        $paramVendorId = intval($_GET['vendor_id']);
+        $sql = 'SELECT * FROM meal_box_orders WHERE user_email = ? AND vendor_id = ? ORDER BY created_at DESC';
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('si', $userEmail, $paramVendorId);
+    } else {
+        // User token: show only mealbox orders for this user
+        if (!$userEmail) {
+            echo json_encode(['status' => 'error', 'message' => 'User email not found in token']);
+            exit;
+        }
+        $sql = 'SELECT * FROM meal_box_orders WHERE user_email = ? ORDER BY created_at DESC';
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('s', $userEmail);
     }
-    $sql = 'SELECT * FROM meal_box_orders WHERE user_email = ? ORDER BY created_at DESC';
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param('s', $userEmail);
     $stmt->execute();
     $result = $stmt->get_result();
-    $rows = [];
     while ($row = $result->fetch_assoc()) {
         $row['items'] = $row['items'] ? json_decode($row['items'], true) : [];
         $allMealbox = true;
@@ -192,7 +217,12 @@ if ($method === 'GET' && $trackingId) {
             $rows[] = $row;
         }
     }
-    echo json_encode(['status' => 'success', 'orders' => $rows, 'user_token' => $jwt]);
+    echo json_encode([
+        'status' => 'success',
+        'orders' => $rows,
+        'user_token' => $jwt,
+        'vendor_token' => $isVendor ? $jwt : null
+    ]);
     $stmt->close();
 
 } else if ($method === 'GET' && $orderId) {

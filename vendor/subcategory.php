@@ -21,7 +21,7 @@ $isAuthenticated = false;
 
 // Try decoding JWT (optional for GET)
 $headers = getallheaders();
-$authHeader = $headers['Authorization'] ?? $headers['authorization'] ?? '';
+$authHeader = $headers['Authorization'] ?? '';
 
 if ($authHeader && preg_match('/Bearer\s(.*)/', $authHeader, $matches)) {
     $jwt = $matches[1];
@@ -62,7 +62,7 @@ if ($method === 'POST') {
     // Convert available to integer
     $data['available'] = (isset($data['available']) && in_array($data['available'], [1, '1', true, 'true'])) ? 1 : 1;
 
-    // Handle image upload
+    // Handle image upload (always vendor/uploads/subcategory_images/)
     $imageUrl = null;
     $uploadDir = __DIR__ . '/uploads/subcategory_images/';
     if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
@@ -71,7 +71,7 @@ if ($method === 'POST') {
         $filename = 'subcategory_' . $vendorId . '_' . time() . '.' . $ext;
         $targetPath = $uploadDir . $filename;
         if (move_uploaded_file($_FILES['imageUrl']['tmp_name'], $targetPath)) {
-            $imageUrl = 'uploads/subcategory_images/' . $filename;
+            $imageUrl = 'vendor/uploads/subcategory_images/' . $filename;
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Image upload failed']);
             exit;
@@ -120,7 +120,7 @@ if ($method === 'POST') {
 }
 
 // ---------- GET ----------
-else if ($method === 'GET') {
+elseif ($method === 'GET') {
     if ($isAuthenticated && $vendorId) {
         // Show only vendor's categories + subcategories
         $sqlCat = 'SELECT DISTINCT c.id, c.name 
@@ -157,12 +157,14 @@ else if ($method === 'GET') {
         $resultSub = $stmtSub->get_result();
         $subcategories = [];
 
+
         while ($row = $resultSub->fetch_assoc()) {
-            // Add full image URL if image path present
+            // Add full image URL for subcategory_images (ensure correct public path)
             if (!empty($row['imageUrl'])) {
-                $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-                $baseUrl = $scheme . '://' . $_SERVER['HTTP_HOST'] . rtrim(dirname($_SERVER['PHP_SELF']), '/\\');
-                $row['image_url'] = rtrim($baseUrl, '/') . '/' . ltrim($row['imageUrl'], '/');
+                $baseUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://" . $_SERVER['HTTP_HOST'];
+                $imgName = basename($row['imageUrl']);
+                $imgPath = 'vendor/uploads/subcategory_images/' . $imgName;
+                $row['image_url'] = $baseUrl . '/' . $imgPath;
             } else {
                 $row['image_url'] = null;
             }
@@ -171,6 +173,19 @@ else if ($method === 'GET') {
             $row['available'] = $row['available'] ?? 1;
             $row['originalPricePerUnit'] = $row['originalPricePerUnit'] ?? $row['pricePerUnit'];
             $row['stock_status'] = ($row['available'] == 1) ? 'in stock' : 'out of stock';
+
+            // Fetch reviews for this subcategory
+            $reviews = [];
+            $sqlReviews = "SELECT r.*, u.name as user_name FROM reviews r INNER JOIN users u ON u.id = r.user_id WHERE r.entity_id = ? AND r.type = 'subcategory'";
+            $stmtReviews = $conn->prepare($sqlReviews);
+            $stmtReviews->bind_param('i', $row['id']);
+            $stmtReviews->execute();
+            $resultReviews = $stmtReviews->get_result();
+            while ($review = $resultReviews->fetch_assoc()) {
+                $reviews[] = $review;
+            }
+            $stmtReviews->close();
+            $row['reviews'] = $reviews;
 
             $subcategories[] = $row;
         }
@@ -185,7 +200,7 @@ else if ($method === 'GET') {
 }
 
 // ---------- PUT ----------
-else if ($method === 'PUT') {
+elseif ($method === 'PUT') {
     if (!$isAuthenticated) {
         echo json_encode(['status' => 'error', 'message' => 'Authorization token required']);
         exit;
@@ -208,7 +223,7 @@ else if ($method === 'PUT') {
         $data['pricePerUnit'] = $original - ($original * $discount / 100);
     }
 
-    // Handle NEW image upload ONLY if a file is provided (use same uploads folder as POST)
+    // Handle NEW image upload ONLY if a file is provided (always vendor/uploads/subcategory_images/)
     if (isset($_FILES['imageUrl']) && $_FILES['imageUrl']['error'] === UPLOAD_ERR_OK) {
         $uploadDir = __DIR__ . '/uploads/subcategory_images/';
         if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
@@ -218,8 +233,7 @@ else if ($method === 'PUT') {
         $targetPath = $uploadDir . $filename;
 
         if (move_uploaded_file($_FILES['imageUrl']['tmp_name'], $targetPath)) {
-            $data['imageUrl'] = 'uploads/subcategory_images/' . $filename;
-            
+            $data['imageUrl'] = 'vendor/uploads/subcategory_images/' . $filename;
             // Add imageUrl to fields to update
             if (!in_array('imageUrl', $fields)) {
                 $fields[] = 'imageUrl';
@@ -266,7 +280,7 @@ else if ($method === 'PUT') {
 }
 
 // ---------- DELETE ----------
-else if ($method === 'DELETE') {
+elseif ($method === 'DELETE') {
     if (!$isAuthenticated) {
         echo json_encode(['status' => 'error', 'message' => 'Authorization token required']);
         exit;

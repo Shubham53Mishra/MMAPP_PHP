@@ -74,12 +74,12 @@ if ($normType === 'order') {
     $stmt->bind_param('s', $id);
 } elseif ($normType === 'mealbox') {
     // Try several candidate columns in meal_box_orders to find the id
-    $table = 'meal_box_orders';
+    $table = 'order_number';
     $user_field = 'user_id';
     $id = $idRaw;
 
     // candidate columns to try (in order)
-    $candidates = ['meal_box_order_id', 'meal_box_order_number', 'order_number', 'id'];
+    $candidates = ['order_number', 'order_number', 'order_number', 'id'];
     foreach ($candidates as $col) {
         $sql = "SELECT * FROM $table WHERE $col = ? LIMIT 1";
         try {

@@ -14,6 +14,10 @@ class ComposerStaticInit66eea8b53c152f5d5906e3a856bdfc25
     );
 
     public static $prefixLengthsPsr4 = array (
+        'W' => 
+        array (
+            'WebSocket\\' => 10,
+        ),
         'S' => 
         array (
             'Symfony\\Polyfill\\Mbstring\\' => 26,
@@ -33,6 +37,7 @@ class ComposerStaticInit66eea8b53c152f5d5906e3a856bdfc25
         ),
         'P' => 
         array (
+            'Psr\\Log\\' => 8,
             'Psr\\Http\\Message\\' => 17,
             'PHPMailer\\PHPMailer\\' => 20,
         ),
@@ -51,6 +56,10 @@ class ComposerStaticInit66eea8b53c152f5d5906e3a856bdfc25
     );
 
     public static $prefixDirsPsr4 = array (
+        'WebSocket\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/textalk/websocket/lib',
+        ),
         'Symfony\\Polyfill\\Mbstring\\' => 
         array (
             0 => __DIR__ . '/..' . '/symfony/polyfill-mbstring',
@@ -94,6 +103,10 @@ class ComposerStaticInit66eea8b53c152f5d5906e3a856bdfc25
         'Ratchet\\' => 
         array (
             0 => __DIR__ . '/..' . '/cboden/ratchet/src/Ratchet',
+        ),
+        'Psr\\Log\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/psr/log/src',
         ),
         'Psr\\Http\\Message\\' => 
         array (
