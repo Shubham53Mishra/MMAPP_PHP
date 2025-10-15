@@ -511,7 +511,6 @@ elseif ($method === 'PUT') {
 }
 elseif ($method === 'DELETE') {
     $id = $_GET['id'] ?? '';
-    
     // Require vendor token
     $token = getBearerToken();
     $auth_info = $token ? validateToken($token) : false;
@@ -521,28 +520,19 @@ elseif ($method === 'DELETE') {
         exit;
     }
     $vendor_id = $auth_info['vendor_id'];
-    
     if (!$id) { 
         echo json_encode(['status'=>'error','message'=>'ID required']); 
         exit; 
     }
-    
-    // Verify subitem belongs to vendor's item before deleting
-    $checkStmt = $conn->prepare("SELECT s.id FROM subitems s JOIN items i ON s.item_id = i.id WHERE s.id = ? AND i.cafe_id = ?");
-    $checkStmt->bind_param('ii', $id, $vendor_id);
-    $checkStmt->execute();
-    $checkStmt->store_result();
-    if ($checkStmt->num_rows === 0) {
-        echo json_encode(['status'=>'error','message'=>'Unauthorized: Subitem not found or does not belong to vendor']);
-        $checkStmt->close();
-        exit;
-    }
-    $checkStmt->close();
-    
-    $stmt = $conn->prepare("DELETE FROM subitems WHERE id=?");
+    // Delete subitem directly by id
+    $stmt = $conn->prepare("DELETE FROM subitems WHERE id = ?");
     $stmt->bind_param('i', $id);
     $stmt->execute();
-    echo json_encode(['status'=>'success', 'message'=>'Subitem deleted successfully']);
+    if ($stmt->affected_rows > 0) {
+        echo json_encode(['status'=>'success', 'message'=>'Subitem deleted successfully']);
+    } else {
+        echo json_encode(['status'=>'error', 'message'=>'Delete failed: Subitem not found', 'db_error' => $stmt->error]);
+    }
     $stmt->close();
 }
 $conn->close();

@@ -1,8 +1,8 @@
 <?php
 header('Content-Type: application/json');
-require_once __DIR__ . '/../common/db.php';
+require_once __DIR__ . '/../common_cafe/db.php';
 
-$email = $_POST['email'] ?? '';
+$email = $_POST['email'] ?? ''; 
 $code = $_POST['code'] ?? '';
 
 if (!$email || !$code) {

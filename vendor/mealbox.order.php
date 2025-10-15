@@ -249,6 +249,7 @@ else if ($method === 'GET' && $trackingId) {
     // If user_token is present in URL, fetch by user_id, else by vendor_id
     $rows = [];
     if (isset($_GET['user_token']) && $_GET['user_token']) {
+        // Always use user_id from token to fetch all orders for that user
         $userId = $decoded->sub;
         $sql = 'SELECT * FROM meal_box_orders WHERE user_id = ? ORDER BY created_at DESC';
         $stmt = $conn->prepare($sql);

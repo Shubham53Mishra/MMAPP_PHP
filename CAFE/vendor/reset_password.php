@@ -3,7 +3,7 @@
 // POST: { email, new_password }
 
 header('Content-Type: application/json');
-require_once __DIR__ . '/../common/db.php';
+require_once __DIR__ . '/../common_cafe/db.php';
 
 $email = $_POST['email'] ?? '';
 $new_password = $_POST['new_password'] ?? '';
