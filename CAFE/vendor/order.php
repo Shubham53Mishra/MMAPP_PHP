@@ -123,15 +123,15 @@ if ($method === 'GET') {
         echo json_encode(['status' => 'error', 'message' => 'Invalid token']);
         exit;
     }
-    $stmt = $conn->prepare('SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC');
-    $stmt->bind_param('i', $user_id);
+    // Get all orders (not just by user_id)
+    $stmt = $conn->prepare('SELECT * FROM orders ORDER BY created_at DESC');
     $stmt->execute();
     $result = $stmt->get_result();
     $orders = [];
     while ($order = $result->fetch_assoc()) {
-        // Get order subitems
-        $stmt_items = $conn->prepare('SELECT subitem_id, quantity, price FROM order_subitems WHERE order_id = ?');
-        $stmt_items->bind_param('i', $order['id']);
+        // Get only subitems for this vendor
+        $stmt_items = $conn->prepare('SELECT os.subitem_id, os.quantity, os.price, s.item_id, s.name FROM order_subitems os JOIN subitems s ON os.subitem_id = s.id WHERE os.order_id = ? AND s.vendor_id = ?');
+        $stmt_items->bind_param('ii', $order['id'], $user_id);
         $stmt_items->execute();
         $items_result = $stmt_items->get_result();
         $subitems = [];
@@ -139,8 +139,10 @@ if ($method === 'GET') {
             $subitems[] = $item;
         }
         $stmt_items->close();
-        $order['subitems'] = $subitems;
-        $orders[] = $order;
+        if (count($subitems) > 0) {
+            $order['subitems'] = $subitems;
+            $orders[] = $order;
+        }
     }
     $stmt->close();
     echo json_encode(['status' => 'success', 'orders' => $orders]);

@@ -63,13 +63,13 @@ if ($method === 'GET') {
     if ($auth_info !== false && isset($auth_info['type']) && $auth_info['type'] === 'vendor') {
         $vendor_id = $auth_info['vendor_id'];
         if ($id) {
-            $stmt = $conn->prepare("SELECT * FROM items WHERE id=? AND cafe_id=?");
+            $stmt = $conn->prepare("SELECT * FROM items WHERE id=? AND vendor_id=?");
             $stmt->bind_param('ii', $id, $vendor_id);
             $stmt->execute();
             echo json_encode($stmt->get_result()->fetch_assoc());
             $stmt->close();
         } else {
-            $stmt = $conn->prepare("SELECT * FROM items WHERE cafe_id=?");
+            $stmt = $conn->prepare("SELECT * FROM items WHERE vendor_id=?");
             $stmt->bind_param('i', $vendor_id);
             $stmt->execute();
             $result = $stmt->get_result();
@@ -106,7 +106,8 @@ elseif ($method === 'POST') {
         echo json_encode(['status'=>'error','message'=>'Vendor token and name required']); exit;
     }
     $created_at = date('Y-m-d H:i:s');
-    $stmt = $conn->prepare("INSERT INTO items (cafe_id, name, created_at, updated_at) VALUES (?, ?, ?, ?)");
+    // Save vendor_id in items table
+    $stmt = $conn->prepare("INSERT INTO items (vendor_id, name, created_at, updated_at) VALUES (?, ?, ?, ?)");
     $stmt->bind_param('isss', $vendor_id, $name, $created_at, $created_at);
     $stmt->execute();
     echo json_encode(['status'=>'success','id'=>$stmt->insert_id]);

@@ -5,7 +5,13 @@ ini_set('display_errors', 1);
 ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/../error.log');
 
+// Always use Asia/Kolkata timezone for all PHP date/time functions
+date_default_timezone_set('Asia/Kolkata');
 require_once '../../common_cafe/db.php';
+// Force MySQL session to Asia/Kolkata timezone for all queries
+if (isset($conn) && $conn) {
+	$conn->query("SET time_zone = '+05:30'");
+}
 require_once '../../common_cafe/jwt_secret.php';
 
 header('Content-Type: application/json');
@@ -166,9 +172,10 @@ switch ($method) {
 		}
 		$cafeImagesJson = json_encode($cafeImagesUrls);
 
-		// Insert into DB (add thumbnail_url, cafe_images columns to your table!)
-		$stmt = $conn->prepare('INSERT INTO cafes (vendor_id, owner_name, owner_email, owner_mobile, name, address, phone, cafe_email, thumbnail_url, cafe_images) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-		$stmt->bind_param('isssssssss', $vendor_id, $owner_name, $owner_email, $owner_mobile, $name, $address, $phone, $cafe_email, $thumbnailUrl, $cafeImagesJson);
+		// Insert into DB (add thumbnail_url, cafe_images, created_at, updated_at columns to your table!)
+		$now = (new DateTime('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d H:i:s');
+		$stmt = $conn->prepare('INSERT INTO cafes (vendor_id, owner_name, owner_email, owner_mobile, name, address, phone, cafe_email, thumbnail_url, cafe_images, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+		$stmt->bind_param('isssssssssss', $vendor_id, $owner_name, $owner_email, $owner_mobile, $name, $address, $phone, $cafe_email, $thumbnailUrl, $cafeImagesJson, $now, $now);
 		if ($stmt->execute()) {
 			echo json_encode([
 				'success' => true,
@@ -194,12 +201,14 @@ switch ($method) {
 			$result = $conn->query('SELECT * FROM cafes');
 			$cafes = $result->fetch_all(MYSQLI_ASSOC);
 		}
-		// Overwrite created_at with local time (Asia/Kolkata)
+		// Overwrite created_at and updated_at with local time (Asia/Kolkata)
 		foreach ($cafes as &$cafe) {
-			if (isset($cafe['created_at'])) {
-				$dt = new DateTime($cafe['created_at'], new DateTimeZone('UTC'));
-				$dt->setTimezone(new DateTimeZone('Asia/Kolkata'));
-				$cafe['created_at'] = $dt->format('Y-m-d H:i:s');
+			foreach (['created_at', 'updated_at'] as $timeField) {
+				if (isset($cafe[$timeField]) && $cafe[$timeField]) {
+					$dt = new DateTime($cafe[$timeField]);
+					$dt->setTimezone(new DateTimeZone('Asia/Kolkata'));
+					$cafe[$timeField] = $dt->format('Y-m-d H:i:s');
+				}
 			}
 			// Decode cafe_images JSON string to array for clean response
 			if (isset($cafe['cafe_images']) && is_string($cafe['cafe_images'])) {
@@ -301,10 +310,11 @@ switch ($method) {
 			}
 		}
 
-		// Update DB with new details
+		// Update DB with new details and set updated_at to local time
 		$cafeImagesJson = json_encode($cafeImagesUrls);
-		$stmt = $conn->prepare('UPDATE cafes SET name = ?, address = ?, phone = ?, cafe_email = ?, thumbnail_url = ?, cafe_images = ? WHERE id = ? AND vendor_id = ?');
-		$stmt->bind_param('ssssssii', $name, $address, $phone, $cafe_email, $thumbnailUrl, $cafeImagesJson, $cafe_id, $vendor_id);
+		$now = (new DateTime('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d H:i:s');
+		$stmt = $conn->prepare('UPDATE cafes SET name = ?, address = ?, phone = ?, cafe_email = ?, thumbnail_url = ?, cafe_images = ?, updated_at = ? WHERE id = ? AND vendor_id = ?');
+		$stmt->bind_param('sssssssii', $name, $address, $phone, $cafe_email, $thumbnailUrl, $cafeImagesJson, $now, $cafe_id, $vendor_id);
 		if ($stmt->execute()) {
 			echo json_encode([
 				'success' => true,
