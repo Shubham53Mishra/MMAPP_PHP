@@ -262,9 +262,9 @@ elseif ($method === 'POST') {
     // Convert to JSON for database storage
     $imagesJson = json_encode($imagesUrls);
 
-    // Insert into DB
-    $stmt = $conn->prepare("INSERT INTO subitems (item_id, name, price, description, image_url, images) VALUES (?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param('isdsss', $item_id, $name, $price, $description, $imageUrl, $imagesJson);
+    // Insert into DB with vendor_id
+    $stmt = $conn->prepare("INSERT INTO subitems (item_id, name, price, description, image_url, images, vendor_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param('isdsssi', $item_id, $name, $price, $description, $imageUrl, $imagesJson, $vendor_id);
     $stmt->execute();
     $newId = $stmt->insert_id;
     $stmt->close();
