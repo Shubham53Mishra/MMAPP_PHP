@@ -52,33 +52,28 @@ if ($method === 'GET') {
     $rows = [];
 
     while ($row = $result->fetch_assoc()) {
-        // Default fallback values
-        $row['discount'] = $row['discount'] ?? 0;
         $row['available'] = $row['available'] ?? 1;
+        // For users (no vendor token), only show available == 1
+        if (!$vendorId && $row['available'] != 1) {
+            continue;
+        }
+        // ...existing code...
+        $row['discount'] = $row['discount'] ?? 0;
         $row['originalPricePerUnit'] = $row['originalPricePerUnit'] ?? null;
         $row['discountStart'] = $row['discountStart'] ?? null;
         $row['discountEnd'] = $row['discountEnd'] ?? null;
-
-        // Stock status
         $row['stock_status'] = ($row['available'] == 1) ? 'in stock' : 'out of stock';
-
-        // Base URL for images
         $baseUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") .
                    "://" . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']);
-
-        // Add image URLs
         foreach (['boxImage', 'actualImage'] as $imgField) {
             $row[$imgField . '_url'] = !empty($row[$imgField])
                 ? rtrim($baseUrl, '/') . '/' . ltrim($row[$imgField], '/')
                 : null;
         }
-
-        // Decode and fetch items
         $itemObjs = [];
         if (!empty($row['items'])) {
             $decoded = json_decode($row['items'], true);
             $itemIds = [];
-
             if (is_array($decoded)) {
                 foreach ($decoded as $item) {
                     if (is_array($item) && isset($item['id'])) {
@@ -94,9 +89,7 @@ if ($method === 'GET') {
                     }
                 }
             }
-
             $itemIds = array_filter(array_unique($itemIds));
-
             if (!empty($itemIds)) {
                 $in = implode(',', array_fill(0, count($itemIds), '?'));
                 $sqlItems = 'SELECT * FROM items WHERE id IN (' . $in . ')';
@@ -105,15 +98,18 @@ if ($method === 'GET') {
                 $stmtItems->bind_param($types, ...$itemIds);
                 $stmtItems->execute();
                 $resultItems = $stmtItems->get_result();
-
                 while ($itemRow = $resultItems->fetch_assoc()) {
+                    $imgPath = $itemRow['image'] ?? '';
+                    if (!empty($imgPath) && strpos($imgPath, 'http') !== 0) {
+                        $imgPath = '/' . ltrim($imgPath, '/');
+                    }
                     $itemObjs[] = [
                         'id' => $itemRow['id'],
                         'name' => $itemRow['name'],
                         'description' => $itemRow['description'],
                         'cost' => $itemRow['cost'],
                         'imageUrl' => !empty($itemRow['image'])
-                            ? rtrim($baseUrl, '/') . '/' . ltrim($itemRow['image'], '/')
+                            ? rtrim($baseUrl, '/') . $imgPath
                             : null,
                         'vendor_id' => $itemRow['vendor_id']
                     ];
@@ -121,7 +117,6 @@ if ($method === 'GET') {
                 $stmtItems->close();
             }
         }
-
         $row['items'] = $itemObjs;
         $rows[] = $row;
     }
@@ -185,14 +180,21 @@ if ($method === 'POST') {
     if (isset($_POST['items'])) {
         $rawItems = $_POST['items'];
         if (is_array($rawItems)) {
-            $items = json_encode($rawItems);
+            // If array, encode as JSON array
+            $items = json_encode(array_map('intval', $rawItems));
         } else if (is_string($rawItems)) {
             if (strpos($rawItems, ',') !== false) {
-                $arr = array_map('trim', explode(',', $rawItems));
+                // Comma separated string, convert to array of ints
+                $arr = array_map('intval', array_map('trim', explode(',', $rawItems)));
                 $items = json_encode($arr);
             } else if (preg_match('/^\[.*\]$/', $rawItems)) {
+                // Already a JSON array string
                 $items = $rawItems;
+            } else if (is_numeric($rawItems)) {
+                // Single numeric string
+                $items = json_encode([intval($rawItems)]);
             } else {
+                // Fallback: wrap as string
                 $items = json_encode([$rawItems]);
             }
         }
@@ -320,13 +322,15 @@ else if ($method === 'POST' && isset($_POST['_method']) && $_POST['_method'] ===
             if ($f === 'items') {
                 $rawItems = $_POST[$f];
                 if (is_array($rawItems)) {
-                    $params[] = json_encode($rawItems);
+                    $params[] = json_encode(array_map('intval', $rawItems));
                 } else if (is_string($rawItems)) {
                     if (strpos($rawItems, ',') !== false) {
-                        $arr = array_map('trim', explode(',', $rawItems));
+                        $arr = array_map('intval', array_map('trim', explode(',', $rawItems)));
                         $params[] = json_encode($arr);
                     } else if (preg_match('/^\[.*\]$/', $rawItems)) {
                         $params[] = $rawItems;
+                    } else if (is_numeric($rawItems)) {
+                        $params[] = json_encode([intval($rawItems)]);
                     } else {
                         $params[] = json_encode([$rawItems]);
                     }

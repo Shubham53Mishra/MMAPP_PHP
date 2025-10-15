@@ -22,6 +22,7 @@ $method = $_SERVER['REQUEST_METHOD'];
 $headers = getallheaders();
 $authHeader = $headers['Authorization'] ?? '';
 
+
 if (!$authHeader || !preg_match('/Bearer\s(.*)/', $authHeader, $matches)) {
     echo json_encode(['status' => 'error', 'message' => 'Authorization token required']);
     exit;
@@ -49,10 +50,8 @@ if ($method === 'GET') {
     $result = $stmt->get_result();
     if ($row = $result->fetch_assoc()) {
         $baseUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://" . $_SERVER['HTTP_HOST'];
-        $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME']));
-        $scriptDir = ($scriptDir === '/' || $scriptDir === '\\') ? '' : rtrim($scriptDir, '/');
         if (!empty($row['image'])) {
-            $row['image_url'] = rtrim($baseUrl, '/') . $scriptDir . '/' . ltrim($row['image'], '/');
+            $row['image_url'] = rtrim($baseUrl, '/') . '/' . ltrim($row['image'], '/');
         } else {
             $row['image_url'] = null;
         }
@@ -93,6 +92,7 @@ if ($method === 'POST') {
     if (!is_array($input)) {
         $input = $_POST;
     }
+
     // Profile image update (optional)
     $dbPath = null;
     if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
@@ -106,15 +106,26 @@ if ($method === 'POST') {
             echo json_encode(['status' => 'error', 'message' => 'Image upload failed']);
             exit;
         }
-    }
-    // If image, update users table
-    if ($dbPath !== null) {
+        // Update image in users table
         $sql = "UPDATE users SET image=? WHERE id=?";
         $stmt = $conn->prepare($sql);
         $stmt->bind_param('si', $dbPath, $userId);
         $stmt->execute();
         $stmt->close();
     }
+
+    // Name update logic
+    $nameUpdated = false;
+    if (isset($input['name']) && !empty(trim($input['name']))) {
+        $newName = trim($input['name']);
+        $sql = "UPDATE users SET name=? WHERE id=?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('si', $newName, $userId);
+        $stmt->execute();
+        $stmt->close();
+        $nameUpdated = true;
+    }
+
     // Address logic
     $addressId = isset($input['id']) ? intval($input['id']) : 0;
     $address = $input['addressLine'] ?? null;
@@ -122,6 +133,7 @@ if ($method === 'POST') {
     $state = $input['state'] ?? null;
     $pincode = $input['pincode'] ?? null;
     $label = $input['label'] ?? null;
+    $addressMsg = null;
     if ($address && $city && $state && $pincode) {
         if ($addressId > 0) {
             // Edit existing address
@@ -130,7 +142,7 @@ if ($method === 'POST') {
             $stmt->bind_param('ssssiii', $address, $city, $state, $pincode, $label, $addressId, $userId);
             $stmt->execute();
             $stmt->close();
-            $msg = 'Address updated';
+            $addressMsg = 'Address updated';
         } else {
             // Add new address
             $sql = "INSERT INTO user_addresses (user_id, address, city, state, pincode, label) VALUES (?, ?, ?, ?, ?, ?)";
@@ -138,18 +150,41 @@ if ($method === 'POST') {
             $stmt->bind_param('isssss', $userId, $address, $city, $state, $pincode, $label);
             $stmt->execute();
             $stmt->close();
-            $msg = 'Address added';
+            $addressMsg = 'Address added';
         }
-        echo json_encode(['status' => 'success', 'message' => $msg]);
+    }
+
+    // Response logic
+    if ($dbPath !== null && $nameUpdated && $addressMsg) {
+        echo json_encode(['status' => 'success', 'message' => 'Image, name, and address updated']);
+        $conn->close();
+        exit;
+    } else if ($dbPath !== null && $nameUpdated) {
+        echo json_encode(['status' => 'success', 'message' => 'Image and name updated']);
+        $conn->close();
+        exit;
+    } else if ($dbPath !== null && $addressMsg) {
+        echo json_encode(['status' => 'success', 'message' => 'Image and address updated']);
         $conn->close();
         exit;
     } else if ($dbPath !== null) {
-        // Only image updated
         echo json_encode(['status' => 'success', 'message' => 'Profile image updated']);
         $conn->close();
         exit;
+    } else if ($nameUpdated && $addressMsg) {
+        echo json_encode(['status' => 'success', 'message' => 'Name and address updated']);
+        $conn->close();
+        exit;
+    } else if ($nameUpdated) {
+        echo json_encode(['status' => 'success', 'message' => 'Name updated']);
+        $conn->close();
+        exit;
+    } else if ($addressMsg) {
+        echo json_encode(['status' => 'success', 'message' => $addressMsg]);
+        $conn->close();
+        exit;
     } else {
-        echo json_encode(['status' => 'error', 'message' => 'No address or image data provided']);
+        echo json_encode(['status' => 'error', 'message' => 'No address, name, or image data provided']);
         $conn->close();
         exit;
     }

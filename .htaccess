@@ -1,5 +1,9 @@
 RewriteEngine On
 
+# Pass Authorization header to PHP (for JWT)
+RewriteCond %{HTTP:Authorization} ^(.*)
+RewriteRule ^(.*)$ - [E=HTTP_AUTHORIZATION:%1]
+
 # Redirect all requests to index.php if file/folder does not exist
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d

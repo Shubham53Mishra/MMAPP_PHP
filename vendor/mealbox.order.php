@@ -4,6 +4,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 1);
 ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/../error.log');
+date_default_timezone_set('Asia/Kolkata');
 
 include __DIR__ . '/../common/db.php';
 require __DIR__ . '/../composer/autoload.php';
@@ -14,14 +15,36 @@ use Firebase\JWT\Key;
 
 header('Content-Type: application/json');
 
-$headers = getallheaders();
-$authHeader = $headers['Authorization'] ?? '';
 
-if (!$authHeader || !preg_match('/Bearer\s(.*)/', $authHeader, $matches)) {
+
+$getAllOrders = isset($_GET['all']) && $_GET['all'] == '1';
+$method = $_SERVER['REQUEST_METHOD'];
+
+if ($method === 'GET' && $getAllOrders) {
+    // Simple GET: return all orders (normal + sample) without JWT
+    $sql = "SELECT * FROM meal_box_orders ORDER BY created_at DESC";
+    $result = $conn->query($sql);
+    $orders = [];
+    while ($row = $result->fetch_assoc()) {
+        $orders[] = $row;
+    }
+    echo json_encode(['status' => 'success', 'orders' => $orders, 'total_orders' => count($orders)]);
+    exit;
+}
+
+
+$headers = getallheaders();
+$jwt = null;
+// If user_token is present in URL, always use it (for user orders)
+if (isset($_GET['user_token']) && $_GET['user_token']) {
+    $jwt = $_GET['user_token'];
+} elseif (isset($headers['Authorization']) && preg_match('/Bearer\s(.*)/', $headers['Authorization'], $matches)) {
+    $jwt = $matches[1];
+}
+if (!$jwt) {
     echo json_encode(['status' => 'error', 'message' => 'Authorization token required']);
     exit;
 }
-$jwt = $matches[1];
 
 try {
     $decoded = JWT::decode($jwt, new Key(JWT_SECRET, 'HS256'));
@@ -33,10 +56,20 @@ try {
 $vendorId = $decoded->sub;
 $orderId = $_GET['id'] ?? null;
 $trackingId = $_GET['tracking'] ?? null; // For tracking endpoint
-$method = $_SERVER['REQUEST_METHOD'];
 
 // Tracking endpoint
-if ($method === 'GET' && $trackingId) {
+if ($method === 'GET' && $getAllOrders) {
+    // Simple GET: return all orders (normal + sample)
+    $sql = "SELECT * FROM meal_box_orders ORDER BY created_at DESC";
+    $result = $conn->query($sql);
+    $orders = [];
+    while ($row = $result->fetch_assoc()) {
+        $orders[] = $row;
+    }
+    echo json_encode(['status' => 'success', 'orders' => $orders, 'total_orders' => count($orders)]);
+    exit;
+}
+else if ($method === 'GET' && $trackingId) {
     $sql = "SELECT status, changed_at FROM order_status_history WHERE order_id = ? ORDER BY changed_at ASC";
     $stmt = $conn->prepare($sql);
     if (!$stmt) {
@@ -57,6 +90,33 @@ if ($method === 'GET' && $trackingId) {
     $stmt->close();
 
 } else if ($method === 'POST' && !$orderId) {
+    // Show vendor info if vendor_id is present in POST body
+    $input = json_decode(file_get_contents('php://input'), true);
+    if (isset($input['vendor_id']) && !isset($input['items'])) {
+        $vendorIdToShow = intval($input['vendor_id']);
+        $sqlVendorInfo = "SELECT * FROM vendors WHERE id = ?";
+        $stmtVendorInfo = $conn->prepare($sqlVendorInfo);
+        $stmtVendorInfo->bind_param('i', $vendorIdToShow);
+        $stmtVendorInfo->execute();
+        $resultVendorInfo = $stmtVendorInfo->get_result();
+        $vendorInfo = $resultVendorInfo->fetch_assoc();
+        $stmtVendorInfo->close();
+        if ($vendorInfo) {
+            $response = [
+                'vendor_id' => $vendorInfo['id'],
+                'vendor_info' => [
+                    'id' => $vendorInfo['id'],
+                    'name' => $vendorInfo['name'] ?? '',
+                    'email' => $vendorInfo['email'] ?? '',
+                    'mobile' => $vendorInfo['mobile'] ?? ''
+                ]
+            ];
+            echo json_encode($response);
+        } else {
+            echo json_encode(['status' => 'error', 'message' => 'Vendor not found']);
+        }
+        exit;
+    }
     // Create mealbox order
     $input = json_decode(file_get_contents('php://input'), true);
     $items = [];
@@ -94,10 +154,16 @@ if ($method === 'GET' && $trackingId) {
     $stmtVendorEmail->close();
 
     // User info from token
-    $userId = $decoded->sub ?? null;
+    $userId = isset($decoded->sub) ? $decoded->sub : null;
     $userName = $decoded->name ?? null;
     $userEmail = $decoded->email ?? null;
     $userMobile = isset($decoded->mobile) ? $decoded->mobile : (isset($input['mobile']) ? $input['mobile'] : null);
+
+    // Ensure userId is not null
+    if ($userId === null) {
+        echo json_encode(['status' => 'error', 'message' => 'User ID missing in token. Cannot create order.']);
+        exit;
+    }
     // If mobile not in token or input, fetch from users table using user email
     if (!$userMobile && $userEmail) {
         $sqlUserMobile = "SELECT mobile FROM users WHERE email = ?";
@@ -118,7 +184,7 @@ if ($method === 'GET' && $trackingId) {
 
     $sql = "INSERT INTO meal_box_orders 
     (vendor_id, vendor_email, items, status, created_at, order_date, order_number, user_id, user_name, user_email, user_mobile) 
-    VALUES (?, ?, ?, 'pending', NOW(), NOW(), ?, ?, ?, ?, ?)";
+    VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)";
 
     $stmt = $conn->prepare($sql);
     if (!$stmt) {
@@ -126,12 +192,16 @@ if ($method === 'GET' && $trackingId) {
         exit;
     }
 
-    // 8 placeholders => issi order me variables
+    $tz = new DateTimeZone('Asia/Kolkata');
+    $nowKolkata = (new DateTime('now', $tz))->format('Y-m-d H:i:s');
+    // 10 placeholders => issi order me variables
     $stmt->bind_param(
-        'isssisss',
+        'isssssssss',
         $bodyVendorId,  // i
         $vendorEmail,   // s
         $itemsJson,     // s
+        $nowKolkata,    // s (created_at)
+        $nowKolkata,    // s (order_date)
         $orderNumber,   // s
         $userId,        // i
         $userName,      // s
@@ -140,69 +210,92 @@ if ($method === 'GET' && $trackingId) {
     );
 
     if ($stmt->execute()) {
+        $orderId = $conn->insert_id;
+        $tz = new DateTimeZone('Asia/Kolkata');
+        $createdAt = (new DateTime('now', $tz))->format('Y-m-d H:i:s');
+        // Fetch vendor info for response
+        $sqlVendorInfo = "SELECT id, name, email, mobile FROM vendors WHERE id = ?";
+        $stmtVendorInfo = $conn->prepare($sqlVendorInfo);
+        $stmtVendorInfo->bind_param('i', $bodyVendorId);
+        $stmtVendorInfo->execute();
+        $resultVendorInfo = $stmtVendorInfo->get_result();
+        $vendorInfo = $resultVendorInfo->fetch_assoc();
+        $stmtVendorInfo->close();
         echo json_encode([
             'status' => 'success',
-            'order_id' => $conn->insert_id,
+            'order_id' => $orderId,
             'order_number' => $orderNumber,
             'vendor_id' => $bodyVendorId,
             'vendor_email' => $vendorEmail,
             'user_name' => $userName,
             'user_email' => $userEmail,
-            'user_mobile' => $userMobile
+            'user_mobile' => $userMobile,
+            'created_at' => $createdAt,
+            'vendor_info' => $vendorInfo ? [
+                'id' => $vendorInfo['id'],
+                'name' => $vendorInfo['name'] ?? '',
+                'email' => $vendorInfo['email'] ?? '',
+                'mobile' => $vendorInfo['mobile'] ?? ''
+            ] : null
         ]);
     } else {
         echo json_encode(['status' => 'error', 'message' => 'Insert failed: ' . $conn->error]);
     }
     $stmt->close();
 
+
+
 } else if ($method === 'GET' && !$orderId) {
-    // Show orders for logged-in vendor or user
-    $userEmail = isset($decoded->email) ? $decoded->email : null;
-    // More robust vendor token detection: if sub exists and is numeric, treat as vendor
-    $isVendor = isset($decoded->sub) && is_numeric($decoded->sub);
+    // If user_token is present in URL, fetch by user_id, else by vendor_id
     $rows = [];
-    if ($isVendor && isset($_GET['vendor_id'])) {
-        // Vendor token and vendor_id param: show all orders for that vendor_id
-        $paramVendorId = intval($_GET['vendor_id']);
+    if (isset($_GET['user_token']) && $_GET['user_token']) {
+        $userId = $decoded->sub;
+        $sql = 'SELECT * FROM meal_box_orders WHERE user_id = ? ORDER BY created_at DESC';
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('i', $userId);
+        $tokenType = 'user';
+    } else {
         $sql = 'SELECT * FROM meal_box_orders WHERE vendor_id = ? ORDER BY created_at DESC';
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param('i', $paramVendorId);
-    } else if ($isVendor) {
-        // Vendor token, no vendor_id param: show ALL mealbox orders
-        $sql = 'SELECT * FROM meal_box_orders ORDER BY created_at DESC';
-        $stmt = $conn->prepare($sql);
-    } else if (!$isVendor && isset($_GET['vendor_id'])) {
-        // User token, vendor_id param: show user's mealbox orders for that vendor_id
-        if (!$userEmail) {
-            echo json_encode(['status' => 'error', 'message' => 'User email not found in token']);
-            exit;
-        }
-        $paramVendorId = intval($_GET['vendor_id']);
-        $sql = 'SELECT * FROM meal_box_orders WHERE user_email = ? AND vendor_id = ? ORDER BY created_at DESC';
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param('si', $userEmail, $paramVendorId);
-    } else {
-        // User token: show only mealbox orders for this user
-        if (!$userEmail) {
-            echo json_encode(['status' => 'error', 'message' => 'User email not found in token']);
-            exit;
-        }
-        $sql = 'SELECT * FROM meal_box_orders WHERE user_email = ? ORDER BY created_at DESC';
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param('s', $userEmail);
+        $stmt->bind_param('i', $vendorId);
+        $tokenType = 'vendor';
     }
     $stmt->execute();
     $result = $stmt->get_result();
     while ($row = $result->fetch_assoc()) {
-        $itemsArr = $row['items'] ? json_decode($row['items'], true) : [];
-        $formattedItems = [];
-        $allMealbox = true;
-        foreach ($itemsArr as $it) {
-            if (!isset($it['type']) || $it['type'] !== 'mealbox') {
-                $allMealbox = false;
-                break;
+        $itemsArr = [];
+        if (!empty($row['items'])) {
+            $decodedItems = json_decode($row['items'], true);
+            if (is_string($decodedItems)) {
+                $decodedItems = json_decode($decodedItems, true);
             }
-            $mealboxInfo = null;
+            if (is_array($decodedItems) && count($decodedItems) === 1 && is_string($decodedItems[0])) {
+                $tryDecode = json_decode($decodedItems[0], true);
+                if (is_array($tryDecode)) {
+                    $decodedItems = $tryDecode;
+                }
+            }
+            if (is_array($decodedItems)) {
+                $itemsArr = $decodedItems;
+            }
+        }
+        $row['items'] = $itemsArr;
+        // Always return created_at, updated_at, order_date, delivery_date, delivery_time in Asia/Kolkata timezone
+        $tz = new DateTimeZone('Asia/Kolkata');
+        foreach (['created_at', 'updated_at', 'order_date', 'delivery_date', 'delivery_time'] as $dtField) {
+            if (isset($row[$dtField]) && !empty($row[$dtField]) && $row[$dtField] !== null) {
+                $dt = new DateTime($row[$dtField]);
+                $dt->setTimezone($tz);
+                $row[$dtField] = $dt->format('Y-m-d H:i:s');
+            } else if (in_array($dtField, ['created_at', 'updated_at', 'order_date'])) {
+                $dt = new DateTime('now', $tz);
+                $row[$dtField] = $dt->format('Y-m-d H:i:s');
+            } else {
+                $row[$dtField] = null;
+            }
+        }
+        // Enrich mealbox info if present
+        foreach ($row['items'] as &$it) {
             if (isset($it['mealbox'])) {
                 $sqlMealbox = "SELECT * FROM vendor_meals WHERE id = ?";
                 $stmtMealbox = $conn->prepare($sqlMealbox);
@@ -211,62 +304,32 @@ if ($method === 'GET' && $trackingId) {
                 $resultMealbox = $stmtMealbox->get_result();
                 $mealboxInfo = $resultMealbox->fetch_assoc();
                 $stmtMealbox->close();
-                // Fix: decode items field if it's a JSON string or array of JSON strings
-                if ($mealboxInfo && isset($mealboxInfo['items'])) {
-                    $decodedItems = json_decode($mealboxInfo['items'], true);
-                    if (json_last_error() === JSON_ERROR_NONE && $decodedItems !== null) {
-                        // If decodedItems is an array of strings, try to decode each string
-                        if (is_array($decodedItems) && count($decodedItems) > 0 && is_string($decodedItems[0])) {
-                            $finalItems = [];
-                            $joined = '[' . implode(',', $decodedItems) . ']';
-                            $tryArray = json_decode($joined, true);
-                            if (json_last_error() === JSON_ERROR_NONE && is_array($tryArray)) {
-                                $finalItems = $tryArray;
-                            } else {
-                                foreach ($decodedItems as $itemStr) {
-                                    $itemStr = trim($itemStr);
-                                    $itemObj = json_decode($itemStr, true);
-                                    if (json_last_error() === JSON_ERROR_NONE && $itemObj !== null) {
-                                        $finalItems[] = $itemObj;
-                                    } else {
-                                        // fallback: try to fix broken JSON (remove leading/trailing brackets/quotes)
-                                        $fixed = preg_replace('/^[\[\"]+|[\]\"]+$/', '', $itemStr);
-                                        $itemObj = json_decode($fixed, true);
-                                        if (json_last_error() === JSON_ERROR_NONE && $itemObj !== null) {
-                                            $finalItems[] = $itemObj;
-                                        } else {
-                                            $finalItems[] = $itemStr;
-                                        }
-                                    }
-                                }
-                            }
-                            $mealboxInfo['items'] = $finalItems;
-                        } else {
-                            $mealboxInfo['items'] = $decodedItems;
-                        }
-                    }
-                }
+                $it['mealbox_info'] = $mealboxInfo;
             }
-            $formattedItems[] = [
-                'type' => 'mealbox',
-                'mealbox_id' => $it['mealbox'] ?? null,
-                'quantity' => $it['quantity'] ?? 1,
-                'deliveryDays' => $it['deliveryDays'] ?? null,
-                'mealbox_info' => $mealboxInfo
-            ];
         }
-        if ($allMealbox && count($formattedItems) > 0) {
-            $row['items'] = $formattedItems;
-            $rows[] = $row;
+        unset($it);
+        // Add vendor_info if user_token
+        if (isset($_GET['user_token']) && $_GET['user_token']) {
+            $vendorInfo = null;
+            if (isset($row['vendor_id'])) {
+                $sqlVendorInfo = "SELECT id, name, email, mobile FROM vendors WHERE id = ?";
+                $stmtVendorInfo = $conn->prepare($sqlVendorInfo);
+                $stmtVendorInfo->bind_param('i', $row['vendor_id']);
+                $stmtVendorInfo->execute();
+                $resultVendorInfo = $stmtVendorInfo->get_result();
+                $vendorInfo = $resultVendorInfo->fetch_assoc();
+                $stmtVendorInfo->close();
+            }
+            $row['vendor_info'] = $vendorInfo ? [
+                'id' => $vendorInfo['id'],
+                'name' => $vendorInfo['name'] ?? '',
+                'email' => $vendorInfo['email'] ?? '',
+                'mobile' => $vendorInfo['mobile'] ?? ''
+            ] : null;
         }
+        $rows[] = $row;
     }
-    echo json_encode([
-        'status' => 'success',
-        'orders' => $rows,
-        'user_token' => $jwt,
-        'vendor_token' => $isVendor ? $jwt : null
-    ]);
-    $stmt->close();
+    echo json_encode(['status' => 'success', 'orders' => $rows, 'token_type' => $tokenType, 'token' => $jwt]);
 
 } else if ($method === 'GET' && $orderId) {
     $sql = 'SELECT * FROM meal_box_orders WHERE vendor_id = ? AND id = ?';
@@ -276,34 +339,40 @@ if ($method === 'GET' && $trackingId) {
     $result = $stmt->get_result();
     $row = $result->fetch_assoc();
     if ($row) {
-        $itemsArr = $row['items'] ? json_decode($row['items'], true) : [];
-        $formattedItems = [];
+        $row['items'] = $row['items'] ? json_decode($row['items'], true) : [];
+        // Always return created_at, updated_at, order_date, delivery_date, delivery_time in Asia/Kolkata timezone
+        $tz = new DateTimeZone('Asia/Kolkata');
+        foreach (['created_at', 'updated_at', 'order_date', 'delivery_date', 'delivery_time'] as $dtField) {
+            if (isset($row[$dtField]) && !empty($row[$dtField]) && $row[$dtField] !== null) {
+                $dt = new DateTime($row[$dtField]);
+                $dt->setTimezone($tz);
+                $row[$dtField] = $dt->format('Y-m-d H:i:s');
+            } else if (in_array($dtField, ['created_at', 'updated_at', 'order_date'])) {
+                $dt = new DateTime('now', $tz);
+                $row[$dtField] = $dt->format('Y-m-d H:i:s');
+            } else {
+                $row[$dtField] = null;
+            }
+        }
         $allMealbox = true;
-        foreach ($itemsArr as $it) {
+        foreach ($row['items'] as &$it) {
             if (!isset($it['type']) || $it['type'] !== 'mealbox') {
                 $allMealbox = false;
                 break;
             }
-            $mealboxInfo = null;
+            // Enrich mealbox info
             if (isset($it['mealbox'])) {
                 $sqlMealbox = "SELECT * FROM vendor_meals WHERE id = ?";
                 $stmtMealbox = $conn->prepare($sqlMealbox);
                 $stmtMealbox->bind_param('i', $it['mealbox']);
                 $stmtMealbox->execute();
                 $resultMealbox = $stmtMealbox->get_result();
-                $mealboxInfo = $resultMealbox->fetch_assoc();
+                $it['mealbox_info'] = $resultMealbox->fetch_assoc();
                 $stmtMealbox->close();
             }
-            $formattedItems[] = [
-                'type' => 'mealbox',
-                'mealbox_id' => $it['mealbox'] ?? null,
-                'quantity' => $it['quantity'] ?? 1,
-                'deliveryDays' => $it['deliveryDays'] ?? null,
-                'mealbox_info' => $mealboxInfo
-            ];
         }
-        if ($allMealbox && count($formattedItems) > 0) {
-            $row['items'] = $formattedItems;
+        unset($it);
+        if ($allMealbox && count($row['items']) > 0) {
             echo json_encode(['status' => 'success', 'order' => $row]);
         } else {
             echo json_encode(['status' => 'error', 'message' => 'Not a mealbox order']);
@@ -327,7 +396,6 @@ if ($method === 'GET' && $trackingId) {
         $resultFindId = $stmtFindId->get_result();
         if ($rowFindId = $resultFindId->fetch_assoc()) {
             $realOrderId = $rowFindId['id'];
-            $stmtFindId->close();
         } else {
             $stmtFindId->close();
             // Try global order_number (no vendor_id restriction)
@@ -338,13 +406,14 @@ if ($method === 'GET' && $trackingId) {
             $resultFindIdGlobal = $stmtFindIdGlobal->get_result();
             if ($rowFindIdGlobal = $resultFindIdGlobal->fetch_assoc()) {
                 $realOrderId = $rowFindIdGlobal['id'];
-                $stmtFindIdGlobal->close();
             } else {
                 echo json_encode(['status' => 'error', 'message' => 'Order not found for order_number']);
                 $stmtFindIdGlobal->close();
                 exit;
             }
+            $stmtFindIdGlobal->close();
         }
+        $stmtFindId->close();
     }
 
     // Always check current status first
@@ -355,24 +424,15 @@ if ($method === 'GET' && $trackingId) {
     $resultCheck = $stmtCheck->get_result();
     $rowCheck = $resultCheck->fetch_assoc();
     $stmtCheck->close();
-    if ($rowCheck) {
-        if ($rowCheck['status'] === 'delivered') {
-            echo json_encode(['status' => 'error', 'message' => 'Order already delivered, status cannot be changed']);
-            exit;
-        }
-        if ($rowCheck['status'] === 'cancelled') {
-            // For deliver, block cancelled; for confirm/cancel, allow logic below
-            if (isset($input['delivered']) && $input['delivered'] == 1 && isset($input['fromDate'])) {
-                echo json_encode(['status' => 'error', 'message' => 'Cannot deliver a cancelled order']);
-                exit;
-            }
-        }
+    if ($rowCheck && $rowCheck['status'] === 'delivered') {
+        echo json_encode(['status' => 'error', 'message' => 'Order already delivered, status cannot be changed']);
+        exit;
     }
     // Confirm
     if (isset($input['deliveryTime']) && isset($input['deliveryDate'])) {
-        $sql = "UPDATE meal_box_orders SET status='confirmed', delivery_time=?, delivery_date=? WHERE vendor_id=? AND id=?";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param('ssii', $input['deliveryTime'], $input['deliveryDate'], $vendorId, $realOrderId);
+    $sql = "UPDATE meal_box_orders SET status='confirmed', delivery_time=?, delivery_date=?, updated_at=NOW() WHERE vendor_id=? AND id=?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param('ssii', $input['deliveryTime'], $input['deliveryDate'], $vendorId, $realOrderId);
         if ($stmt->execute()) {
             echo json_encode(['status' => 'success', 'message' => 'Order confirmed']);
         } else {
@@ -382,9 +442,9 @@ if ($method === 'GET' && $trackingId) {
     }
     // Cancel
     else if (isset($input['reason'])) {
-        $sql = "UPDATE meal_box_orders SET status='cancelled', cancel_reason=? WHERE vendor_id=? AND id=?";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param('sii', $input['reason'], $vendorId, $realOrderId);
+    $sql = "UPDATE meal_box_orders SET status='cancelled', cancel_reason=?, updated_at=NOW() WHERE vendor_id=? AND id=?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param('sii', $input['reason'], $vendorId, $realOrderId);
         if ($stmt->execute()) {
             echo json_encode(['status' => 'success', 'message' => 'Order cancelled']);
         } else {
@@ -394,23 +454,18 @@ if ($method === 'GET' && $trackingId) {
     }
     // Deliver
     else if (isset($input['delivered']) && $input['delivered'] == 1 && isset($input['fromDate'])) {
-        // Only allow if not cancelled or delivered
-        if ($rowCheck && ($rowCheck['status'] === 'cancelled' || $rowCheck['status'] === 'delivered')) {
-            if ($rowCheck['status'] === 'cancelled') {
-                echo json_encode(['status' => 'error', 'message' => 'Cannot deliver a cancelled order']);
-            } else {
-                echo json_encode(['status' => 'error', 'message' => 'Order already delivered']);
-            }
+        if ($rowCheck && $rowCheck['status'] === 'cancelled') {
+            echo json_encode(['status' => 'error', 'message' => 'Cannot deliver a cancelled order']);
             exit;
         }
         $deliveryDate = $input['fromDate'];
         $deliveryTime = isset($input['deliveryTime']) ? $input['deliveryTime'] : null;
         if ($deliveryTime) {
-            $sql = "UPDATE meal_box_orders SET status='delivered', delivery_date=?, delivery_time=? WHERE vendor_id=? AND id=?";
+            $sql = "UPDATE meal_box_orders SET status='delivered', delivery_date=?, delivery_time=?, updated_at=NOW() WHERE vendor_id=? AND id=?";
             $stmt = $conn->prepare($sql);
             $stmt->bind_param('ssii', $deliveryDate, $deliveryTime, $vendorId, $realOrderId);
         } else {
-            $sql = "UPDATE meal_box_orders SET status='delivered', delivery_date=? WHERE vendor_id=? AND id=?";
+            $sql = "UPDATE meal_box_orders SET status='delivered', delivery_date=?, updated_at=NOW() WHERE vendor_id=? AND id=?";
             $stmt = $conn->prepare($sql);
             $stmt->bind_param('sii', $deliveryDate, $vendorId, $realOrderId);
         }

@@ -8,7 +8,8 @@ if (isset($conn) && $conn && $conn->ping()) {
     $row = $result->fetch_assoc();
     $dbname = $row['dbname'];
 
-    echo "✅ Database connected: " . $dbname;
+  
+    
 } else {
     echo "❌ Database connection failed";
 }

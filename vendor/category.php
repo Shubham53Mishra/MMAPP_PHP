@@ -19,22 +19,15 @@ $headers = getallheaders();
 $authHeader = $headers['Authorization'] ?? '';
 
 if ($method === 'POST') {
-    // Add new category with image upload
+    // Add new category with image upload, NO token or Authorization required
     $data = $_POST;
     if (!isset($data['name'])) {
         echo json_encode(['status' => 'error', 'message' => 'name required']); exit;
     }
-    // Get vendorId from token
-    if (!$authHeader || !preg_match('/Bearer\s(.*)/', $authHeader, $matches)) {
-        echo json_encode(['status' => 'error', 'message' => 'Authorization token required']); exit;
+    $vendorId = isset($data['vendor_id']) ? intval($data['vendor_id']) : null;
+    if (!$vendorId) {
+        echo json_encode(['status' => 'error', 'message' => 'vendor_id required']); exit;
     }
-    $jwt = $matches[1];
-    try {
-        $decoded = JWT::decode($jwt, new Key(JWT_SECRET, 'HS256'));
-    } catch (Exception $e) {
-        echo json_encode(['status' => 'error', 'message' => 'Invalid token']); exit;
-    }
-    $vendorId = $decoded->sub;
     $imagePath = null;
     if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
         $uploadDir = __DIR__ . '/uploads/vendor_' . $vendorId . '/';
@@ -62,6 +55,22 @@ if ($method === 'POST') {
 }
 
 if ($method === 'GET') {
+    // If ?all=1, return all categories for user (no token required)
+    if (isset($_GET['all']) && $_GET['all'] == '1') {
+        $sql = "SELECT * FROM categories";
+        $result = $conn->query($sql);
+        $categories = [];
+        $baseUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . '/';
+        while ($row = $result->fetch_assoc()) {
+            $row['image_url'] = !empty($row['image']) ? ($baseUrl . $row['image']) : null;
+            $categories[] = $row;
+        }
+        $conn->close();
+        echo json_encode(['status' => 'success', 'categories' => $categories]);
+        exit;
+    }
+
+    // Default: vendor GET (token required)
     if (!$authHeader || !preg_match('/Bearer\s(.*)/', $authHeader, $matches)) {
         echo json_encode(['status' => 'error', 'message' => 'Authorization token required']);
         exit;
@@ -89,7 +98,9 @@ if ($method === 'GET') {
     $stmt->execute();
     $result = $stmt->get_result();
     $categories = [];
+    $baseUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] . dirname($_SERVER['PHP_SELF']) . '/';
     while ($row = $result->fetch_assoc()) {
+        $row['image_url'] = !empty($row['image']) ? ($baseUrl . $row['image']) : null;
         $categories[] = $row;
     }
     $stmt->close();

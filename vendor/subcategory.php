@@ -50,6 +50,7 @@ if ($method === 'POST') {
 
     // Add subcategory (with image upload)
     $data = $_POST;
+
     $fields = ['category_id', 'name', 'description', 'pricePerUnit', 'quantity', 'priceType', 'deliveryPriceEnabled', 'minDeliveryDays', 'maxDeliveryDays'];
 
     foreach ($fields as $f) {
@@ -59,6 +60,13 @@ if ($method === 'POST') {
         }
     }
 
+    // Convert deliveryPriceEnabled to integer (1 for true, 0 for false)
+    if (isset($data['deliveryPriceEnabled'])) {
+        $val = strtolower(trim((string)$data['deliveryPriceEnabled']));
+        $data['deliveryPriceEnabled'] = in_array($val, ['1', 'true', 'yes']) ? 1 : 0;
+    } else {
+        $data['deliveryPriceEnabled'] = 0;
+    }
     // Convert available to integer
     $data['available'] = (isset($data['available']) && in_array($data['available'], [1, '1', true, 'true'])) ? 1 : 1;
 
@@ -174,6 +182,9 @@ elseif ($method === 'GET') {
             $row['originalPricePerUnit'] = $row['originalPricePerUnit'] ?? $row['pricePerUnit'];
             $row['stock_status'] = ($row['available'] == 1) ? 'in stock' : 'out of stock';
 
+            // Show pricePerUnit directly from vendor_subcategories table, default to 0 if missing
+            $row['pricePerUnit'] = isset($row['pricePerUnit']) && $row['pricePerUnit'] !== null ? floatval($row['pricePerUnit']) : 0.0;
+
             // Fetch reviews for this subcategory
             $reviews = [];
             $sqlReviews = "SELECT r.*, u.name as user_name FROM reviews r INNER JOIN users u ON u.id = r.user_id WHERE r.entity_id = ? AND r.type = 'subcategory'";
@@ -227,6 +238,12 @@ elseif ($method === 'PUT') {
         $data['pricePerUnit'] = $original - ($original * $discount / 100);
     }
 
+    // Convert deliveryPriceEnabled to integer (1 for true, 0 for false)
+    if (isset($data['deliveryPriceEnabled'])) {
+        $val = strtolower(trim((string)$data['deliveryPriceEnabled']));
+        $data['deliveryPriceEnabled'] = in_array($val, ['1', 'true', 'yes']) ? 1 : 0;
+    }
+
     // Handle NEW image upload ONLY if a file is provided (always vendor/uploads/subcategory_images/)
     if (isset($_FILES['imageUrl']) && $_FILES['imageUrl']['error'] === UPLOAD_ERR_OK) {
         $uploadDir = __DIR__ . '/uploads/subcategory_images/';
@@ -273,6 +290,10 @@ elseif ($method === 'PUT') {
             if (isset($data[$f])) {
                 if ($f === 'available') {
                     $data[$f] = (in_array($data[$f], [1, '1', true, 'true'])) ? 1 : 0;
+                }
+                if ($f === 'deliveryPriceEnabled') {
+                    $val = strtolower(trim((string)$data[$f]));
+                    $data[$f] = in_array($val, ['1', 'true', 'yes']) ? 1 : 0;
                 }
                 $set[] = "$f = ?";
                 $params[] = $data[$f];
