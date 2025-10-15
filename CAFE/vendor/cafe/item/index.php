@@ -9,6 +9,9 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../../../common_cafe/db.php';
 require_once __DIR__ . '/../../../common_cafe/jwt_secret.php';
 
+// Set timezone to India (IST)
+date_default_timezone_set('Asia/Kolkata');
+
 // Helper: Get Bearer token from Authorization header
 function getBearerToken() {
     $header = null;
