@@ -36,6 +36,10 @@ function getBearerToken() {
 function validateToken($token) {
     require_once __DIR__ . '/../../../vendor/firebase/php-jwt/src/JWT.php';
     require_once __DIR__ . '/../../../vendor/firebase/php-jwt/src/Key.php';
+    require_once __DIR__ . '/../../../vendor/firebase/php-jwt/src/JWTExceptionWithPayloadInterface.php';
+    require_once __DIR__ . '/../../../vendor/firebase/php-jwt/src/ExpiredException.php';
+    require_once __DIR__ . '/../../../vendor/firebase/php-jwt/src/SignatureInvalidException.php';
+    require_once __DIR__ . '/../../../vendor/firebase/php-jwt/src/BeforeValidException.php';
     $secret = JWT_SECRET;
     try {
         $decoded = \Firebase\JWT\JWT::decode($token, new \Firebase\JWT\Key($secret, 'HS256'));
@@ -84,7 +88,7 @@ if ($method === 'GET') {
     if ($id) {
         if ($auth_info !== false && isset($auth_info['type']) && $auth_info['type'] === 'vendor') {
             // Vendor token: only show if item belongs to this vendor
-            $stmt = $conn->prepare("SELECT s.* FROM subitems s JOIN items i ON s.item_id = i.id WHERE s.id=? AND s.item_id=? AND i.cafe_id=?");
+            $stmt = $conn->prepare("SELECT s.* FROM subitems s JOIN items i ON s.item_id = i.id WHERE s.id=? AND s.item_id=? AND i.vendor_id=?");
             $stmt->bind_param('iii', $id, $item_id, $auth_info['vendor_id']);
             $stmt->execute();
             $row = $stmt->get_result()->fetch_assoc();
@@ -110,7 +114,7 @@ if ($method === 'GET') {
     } else if ($item_id) {
         if ($auth_info !== false && isset($auth_info['type']) && $auth_info['type'] === 'vendor') {
             // Vendor token: only show subitems for items belonging to this vendor
-            $stmt = $conn->prepare("SELECT s.* FROM subitems s JOIN items i ON s.item_id = i.id WHERE s.item_id=? AND i.cafe_id=?");
+            $stmt = $conn->prepare("SELECT s.* FROM subitems s JOIN items i ON s.item_id = i.id WHERE s.item_id=? AND i.vendor_id=?");
             $stmt->bind_param('ii', $item_id, $auth_info['vendor_id']);
             $stmt->execute();
             $result = $stmt->get_result();
@@ -144,7 +148,7 @@ if ($method === 'GET') {
     } else {
         // No item_id: show all subitems (public or vendor filtered)
         if ($auth_info !== false && isset($auth_info['type']) && $auth_info['type'] === 'vendor') {
-            $stmt = $conn->prepare("SELECT s.* FROM subitems s JOIN items i ON s.item_id = i.id WHERE i.cafe_id=?");
+            $stmt = $conn->prepare("SELECT s.* FROM subitems s JOIN items i ON s.item_id = i.id WHERE i.vendor_id=?");
             $stmt->bind_param('i', $auth_info['vendor_id']);
             $stmt->execute();
             $result = $stmt->get_result();
@@ -192,16 +196,18 @@ elseif ($method === 'POST') {
         echo json_encode(['status'=>'error','message'=>'Item ID and name required']); exit;
     }
 
-    // Check if item_id exists and belongs to this vendor
-    $checkStmt = $conn->prepare("SELECT id FROM items WHERE id = ? AND cafe_id = ?");
+    // Check if item_id exists and get cafe_id for this item and vendor
+    $checkStmt = $conn->prepare("SELECT id, cafe_id FROM items WHERE id = ? AND vendor_id = ?");
     $checkStmt->bind_param('ii', $item_id, $vendor_id);
     $checkStmt->execute();
-    $checkStmt->store_result();
-    if ($checkStmt->num_rows === 0) {
+    $result = $checkStmt->get_result();
+    if ($result->num_rows === 0) {
         echo json_encode(['status'=>'error','message'=>'Invalid item_id: No such item for this vendor']);
         $checkStmt->close();
         exit;
     }
+    $row = $result->fetch_assoc();
+    $cafe_id = $row['cafe_id'];
     $checkStmt->close();
 
     // Handle uploads
@@ -262,9 +268,9 @@ elseif ($method === 'POST') {
     // Convert to JSON for database storage
     $imagesJson = json_encode($imagesUrls);
 
-    // Insert into DB with vendor_id
-    $stmt = $conn->prepare("INSERT INTO subitems (item_id, name, price, description, image_url, images, vendor_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param('isdsssi', $item_id, $name, $price, $description, $imageUrl, $imagesJson, $vendor_id);
+    // Insert into DB with vendor_id and cafe_id
+    $stmt = $conn->prepare("INSERT INTO subitems (item_id, name, price, description, image_url, images, vendor_id, cafe_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param('isdsssii', $item_id, $name, $price, $description, $imageUrl, $imagesJson, $vendor_id, $cafe_id);
     $stmt->execute();
     $newId = $stmt->insert_id;
     $stmt->close();
